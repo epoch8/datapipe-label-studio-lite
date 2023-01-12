@@ -8,13 +8,13 @@ from datapipe.store.database import TableStoreDB
 
 from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import ChangeList, DataDF, data_to_index, index_to_data
+from datapipe.types import ChangeList, data_to_index, index_to_data
 from datapipe.compute import PipelineStep, DataStore, Catalog, DatatableTransformStep
 from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Column as Column_LS, Operator, Type
+from label_studio_sdk.data_manager import Filters, Operator, Type
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
@@ -50,24 +50,36 @@ class LabelStudioStep(PipelineStep):
             )
         if isinstance(self.project_identifier, str):
             assert len(self.project_identifier) <= 50
-        self.ls_client = label_studio_sdk.Client(
-            url=self.ls_url,
-            api_key=self.api_key if isinstance(self.api_key, str) else None,
-            credentials=self.api_key if isinstance(self.api_key, tuple) else None
-        )
 
-        self.project: Optional[label_studio_sdk.Project] = None
+        # lazy initialization
+        self._ls_client: Optional[label_studio_sdk.Client] = None
+        self._project: Optional[label_studio_sdk.Project] = None
 
-    def get_or_create_project(self, raise_exception: bool = False) -> label_studio_sdk.Project:
-        if self.project is not None:
-            return self.project
+    @property
+    def ls_client(self) -> label_studio_sdk.Client:
+        if self._ls_client is None:
+            self._ls_client = label_studio_sdk.Client(
+                url=self.ls_url,
+                api_key=self.api_key if isinstance(self.api_key, str) else None,
+                credentials=self.api_key if isinstance(self.api_key, tuple) else None
+            )
+        return self._ls_client
+
+    @property
+    def project(self) -> label_studio_sdk.Project:
+        """
+            При первом использовании ищет проект в LS по индентификатору,
+            если его нет -- автоматически создаётся проект с нуля.
+        """
+        if self._project is not None:
+            return self._project
         assert self.ls_client.check_connection(), "No connection to LS."
-        self.project = (
+        self._project = (
             self.project_identifier if str(self.project_identifier).isnumeric()
             else get_project_by_title(self.ls_client, str(self.project_identifier))
         )
-        if self.project is None:
-            self.project = self.ls_client.start_project(
+        if self._project is None:
+            self._project = self.ls_client.start_project(
                 title=self.project_identifier,
                 description=self.project_description_at_create,
                 label_config=self.project_label_config_at_create,
@@ -93,7 +105,7 @@ class LabelStudioStep(PipelineStep):
                 control_weights={}
             )
 
-        return self.project
+        return self._project
 
     def _convert_data_if_need(self, value: Any):
         if isinstance(value, np.int64):
@@ -148,7 +160,7 @@ class LabelStudioStep(PipelineStep):
                     on=self.primary_keys
                 )
                 for task_id in df_to_be_deleted['task_id']:
-                    self.get_or_create_project().make_request(
+                    self.project.make_request(
                         method='DELETE', url=f"api/tasks/{task_id}/",
                     )
 
@@ -164,7 +176,7 @@ class LabelStudioStep(PipelineStep):
                 }
                 for idx in df.index
             ]
-            tasks_added = self.get_or_create_project().import_tasks(tasks=data_to_be_added)
+            tasks_added = self.project.import_tasks(tasks=data_to_be_added)
             df_idx['task_id'] = tasks_added
             return df_idx
 
@@ -200,7 +212,7 @@ class LabelStudioStep(PipelineStep):
                     )
                 ]
             )
-            for tasks_page in get_tasks_iter(self.get_or_create_project(), filters=filters):
+            for tasks_page in get_tasks_iter(self.project, filters=filters):
                 output_df = pd.DataFrame.from_records(
                     {
                         **{
