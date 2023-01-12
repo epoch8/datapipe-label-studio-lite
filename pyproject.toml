@@ -7,15 +7,15 @@ authors = ["Alexander Kozlov <bobokvsky@epoch8.co>"]
 exclude=["tests", "examples"]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <4.0"
-pandas = ">=1.2.0"
-numpy = ">=1.21.0"
-SQLAlchemy = ">=1.4.25"
-tqdm = ">=4.60.0"
-requests = ">=2.24.0"
-datapipe-core = ">=0.11.10"
-iteration-utilities = ">=0.11.0"
-label-studio-sdk = ">=0.0.16"
+python = ">=3.8, <3.11"
+pandas = "^1.2.0"
+numpy = "^1.21.0"
+SQLAlchemy = "^1.4.25"
+tqdm = "^4.60.0"
+requests = "^2.24.0"
+datapipe-core = "^0.11.10"
+iteration-utilities = "^0.11.0"
+label-studio-sdk = "^0.0.16"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
