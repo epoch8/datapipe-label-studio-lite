@@ -1,32 +1,25 @@
 import numpy as np
 import pandas as pd
-from typing import Any, Callable, Union, List, Optional
+from typing import Any, Union, List, Optional
+from datetime import datetime
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
 from datapipe.store.database import TableStoreDB
 
-from sqlalchemy import Integer, Column, JSON
+from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import ChangeList, DataDF
+from datapipe.types import ChangeList, DataDF, data_to_index, index_to_data
 from datapipe.compute import PipelineStep, DataStore, Catalog, DatatableTransformStep
-from datapipe.core_steps import BatchTransformStep
+from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title
-from datapipe.types import (
-    DataDF, data_to_index, index_to_data,
-)
+from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
+from label_studio_sdk.data_manager import Filters, Column as Column_LS, Operator, Type
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
     def run_changelist(self, ds: DataStore, changelist: ChangeList, run_config: RunConfig = None) -> ChangeList:
         return ChangeList()
-
-
-class DatatableTransformStepWithChangeList(DatatableTransformStep):
-    def run_changelist(self, ds: DataStore, changelist: ChangeList, run_config: RunConfig = None) -> ChangeList:
-        self.func(ds, self.input_dts, self.output_dts, run_config)
-        return changelist
 
 
 @dataclass
@@ -43,9 +36,6 @@ class LabelStudioStep(PipelineStep):
     project_label_config_at_create: str = ''
     project_description_at_create: str = ''
 
-    input_convert_func: Callable[[DataDF], DataDF] = lambda df: df
-    output_convert_func: Callable[[DataDF], DataDF] = lambda df: df
-
     create_table: bool = False
 
     def __post_init__(self):
@@ -60,7 +50,7 @@ class LabelStudioStep(PipelineStep):
             )
         if isinstance(self.project_identifier, str):
             assert len(self.project_identifier) <= 50
-        self.label_studio_session = label_studio_sdk.Client(
+        self.ls_client = label_studio_sdk.Client(
             url=self.ls_url,
             api_key=self.api_key if isinstance(self.api_key, str) else None,
             credentials=self.api_key if isinstance(self.api_key, tuple) else None
@@ -71,22 +61,13 @@ class LabelStudioStep(PipelineStep):
     def get_or_create_project(self, raise_exception: bool = False) -> label_studio_sdk.Project:
         if self.project is not None:
             return self.project
-
-        if not self.label_studio_session.check_connection():
-            return '-1'
-
+        assert self.ls_client.check_connection(), "No connection to LS."
         self.project = (
-            self.project_identifier if self.project_identifier.isnumeric()
-            else get_project_by_title(self.label_studio_session, self.project_identifier)
+            self.project_identifier if str(self.project_identifier).isnumeric()
+            else get_project_by_title(self.ls_client, str(self.project_identifier))
         )
         if self.project is None:
-            if raise_exception:
-                raise ValueError(f"Project with {self.project_identifier=} not found.")
-            else:
-                return '-1'
-
-        if self.project is None:
-            self.project = self.label_studio_session.start_project(
+            self.project = self.ls_client.start_project(
                 title=self.project_identifier,
                 description=self.project_description_at_create,
                 label_config=self.project_label_config_at_create,
@@ -127,7 +108,15 @@ class LabelStudioStep(PipelineStep):
             f'{self.output}_upload', TableStoreDB(
                 dbconn=self.dbconn,
                 name=f'{self.output}_upload',
-                data_sql_schema=self.primary_keys + [Column('task_id', Integer)],
+                data_sql_schema=self.data_sql_schema_primary + [Column('task_id', Integer)],
+                create_table=self.create_table
+            )
+        )
+        sync_datetime_dt = ds.get_or_create_table(
+            f"{self.output}_last_sync_datetime", TableStoreDB(
+                dbconn=self.dbconn,
+                name=f"{self.output}_last_sync_datetime",
+                data_sql_schema=[Column('id', Integer, primary_key=True), Column('datetime', DateTime)],
                 create_table=self.create_table
             )
         )
@@ -135,7 +124,7 @@ class LabelStudioStep(PipelineStep):
             self.output, TableStoreDB(
                 dbconn=self.dbconn,
                 name=self.output,
-                data_sql_schema=self.primary_keys + [Column('task_id', Integer), Column('annotations', JSON)],
+                data_sql_schema=self.data_sql_schema_primary + [Column('annotations', JSON)],
                 create_table=self.create_table
             )
         )
@@ -148,8 +137,6 @@ class LabelStudioStep(PipelineStep):
             if df.empty or len(df) == 0:
                 return
 
-            df = self.input_convert_func(df)
-
             # Удаляем существующие задачи и перезаливаем их
             df_idx = data_to_index(df, self.primary_keys)
             existing_tasks_df_without_annotations = output_uploader_dt.get_data(idx=df_idx)
@@ -160,7 +147,7 @@ class LabelStudioStep(PipelineStep):
                     right=existing_tasks_df_without_annotations[self.primary_keys + ['task_id']],
                     on=self.primary_keys
                 )
-                for task_id in df_to_be_deleted.loc[df_idx, 'task_id']:
+                for task_id in df_to_be_deleted['task_id']:
                     self.get_or_create_project().make_request(
                         method='DELETE', url=f"api/tasks/{task_id}/",
                     )
@@ -181,7 +168,10 @@ class LabelStudioStep(PipelineStep):
             df_idx['task_id'] = tasks_added
             return df_idx
 
-        def get_annotations_from_ls(ds, input_dts, output_dts, run_config):
+        def get_annotations_from_ls(
+            ds: DataStore, input_dts: List[DataTable], output_dts: List[DataTable],
+            run_config: RunConfig
+        ):
             """
                 Возвращает все задачи из сервера LS вместе с разметкой
             """
@@ -192,30 +182,47 @@ class LabelStudioStep(PipelineStep):
                         del ann['created_ago']
                 return values
 
-            tasks = self.get_or_create_project().get_tasks()  # TO BE ADDED: фильтрация
-            tasks_split = np.array_split(tasks, max(1, len(tasks) // 1000))
-            for tasks_page in tasks_split:
+            sync_datetime_df = sync_datetime_dt.get_data()
+            if sync_datetime_df.empty:
+                last_sync = datetime.fromtimestamp(0)
+            else:
+                last_sync = sync_datetime_df.loc[0, 'datetime']
+
+            now = datetime.now()
+            filters = Filters.create(
+                conjunction="and", items=[
+                    Filters.item(
+                        name="updated_at",  # в sdk нету Column_LS.updated_at
+                        operator=Operator.GREATER_OR_EQUAL,
+                        column_type=Type.Datetime,
+                        value=Filters.value(value=Filters.datetime(last_sync))
+                    )
+                ]
+            )
+            for tasks_page in get_tasks_iter(self.get_or_create_project(), filters=filters):
                 output_df = pd.DataFrame.from_records(
                     {
                         **{
                             primary_key: [task['data'][primary_key] for task in tasks_page]
                             for primary_key in self.primary_keys
                         },
-                        'task_id': [int(task['id']) for task in tasks_page],
                         'annotations': [_cleanup(task['annotations']) for task in tasks_page]
                     }
                 )
-                output_dt.store_chunk(output_df)
+                output_dts[0].store_chunk(output_df)
+
+            sync_datetime_df.loc[0, 'datetime'] = now
+            sync_datetime_dt.store_chunk(sync_datetime_df, now=now.timestamp())
 
         return [
             BatchTransformStep(
-                name=f'{self.output}_upload_data_to_ls',
+                name='upload_data_to_ls',
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[output_uploader_dt],
             ),
             DatatableTransformStepNoChangeList(
-                name=f'{self.output}_dump_from_ls_to_db',
+                name='get_annotations_from_ls',
                 func=get_annotations_from_ls,
                 input_dts=[],
                 output_dts=[output_dt],
