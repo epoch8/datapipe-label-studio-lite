@@ -196,8 +196,7 @@ class LabelStudioStep(PipelineStep):
                         del ann['created_ago']
                 return values
 
-            project_id = self.project.get_params()['id']
-            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [project_id]}))
+            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [self.project.id]}))
             if sync_datetime_df.empty:
                 last_sync = datetime.fromtimestamp(0)
             else:
