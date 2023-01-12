@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datapipe.run_config import RunConfig
 from datapipe.store.database import TableStoreDB
 
-from sqlalchemy import Integer, Column, JSON, DateTime
+from sqlalchemy import Integer, Column, JSON, DateTime, String
 
 from datapipe.types import ChangeList, data_to_index, index_to_data
 from datapipe.compute import PipelineStep, DataStore, Catalog, DatatableTransformStep
@@ -14,7 +14,7 @@ from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Column as Column_LS, Type
+from label_studio_sdk.data_manager import Filters, Operator, Type
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
@@ -26,6 +26,7 @@ class DatatableTransformStepNoChangeList(DatatableTransformStep):
 class LabelStudioStep(PipelineStep):
     input: str
     output: str
+    sync_table: str
 
     ls_url: str
     api_key: str
@@ -125,10 +126,10 @@ class LabelStudioStep(PipelineStep):
             )
         )
         sync_datetime_dt = ds.get_or_create_table(
-            f"{self.output}_last_sync_datetime", TableStoreDB(
+            self.sync_table, TableStoreDB(
                 dbconn=self.dbconn,
-                name=f"{self.output}_last_sync_datetime",
-                data_sql_schema=[Column('id', Integer, primary_key=True), Column('datetime', DateTime)],
+                name=self.sync_table,
+                data_sql_schema=[Column('project_id', String, primary_key=True), Column('datetime', DateTime)],
                 create_table=self.create_table
             )
         )
@@ -195,7 +196,8 @@ class LabelStudioStep(PipelineStep):
                         del ann['created_ago']
                 return values
 
-            sync_datetime_df = sync_datetime_dt.get_data()
+            project_id = self.project.get_params()['id']
+            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [project_id]}))
             if sync_datetime_df.empty:
                 last_sync = datetime.fromtimestamp(0)
             else:
@@ -222,7 +224,7 @@ class LabelStudioStep(PipelineStep):
                         'annotations': [_cleanup(task['annotations']) for task in tasks_page]
                     }
                 )
-                output_dts[0].store_chunk(output_df)
+                output_dts[0].store_chunk(output_df, now=now.timestamp())
 
             sync_datetime_df.loc[0, 'datetime'] = now
             sync_datetime_dt.store_chunk(sync_datetime_df, now=now.timestamp())

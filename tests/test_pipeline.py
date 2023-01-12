@@ -211,7 +211,7 @@ class CasesLabelStudio:
             LabelStudioStep(
                 input='ls_input_data',
                 output='ls_annotations',
-
+                sync_table='ls_sync_datetime',
                 ls_url=ls_url,
                 api_key=api_key,
                 dbconn=dbconn,
