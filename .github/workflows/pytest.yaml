@@ -53,6 +53,7 @@ jobs:
         python-version: [3.8]
         test-db-env: ['postgres']
         test-ls-env: [
+          'heartexlabs/label-studio:1.7.0',
           'heartexlabs/label-studio:1.6.0',
         ]
 
