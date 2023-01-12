@@ -14,7 +14,7 @@ from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Type
+from label_studio_sdk.data_manager import Filters, Operator, Column as Column_LS, Type
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
@@ -205,7 +205,7 @@ class LabelStudioStep(PipelineStep):
             filters = Filters.create(
                 conjunction="and", items=[
                     Filters.item(
-                        name="updated_at",  # в sdk нету Column_LS.updated_at
+                        name="tasks:updated_at",  # в sdk нету Column_LS.updated_at
                         operator=Operator.GREATER_OR_EQUAL,
                         column_type=Type.Datetime,
                         value=Filters.value(value=Filters.datetime(last_sync))
