@@ -117,10 +117,10 @@ class LabelStudioStep(PipelineStep):
         self, ds: DataStore, catalog: Catalog
     ) -> List[DatatableTransformStep]:
         input_dt = catalog.get_datatable(ds, self.input)
-        output_uploader_dt = ds.get_or_create_table(
-            f'{self.output}_upload', TableStoreDB(
+        input_uploader_dt = ds.get_or_create_table(
+            f'{self.input}_upload', TableStoreDB(
                 dbconn=self.dbconn,
-                name=f'{self.output}_upload',
+                name=f'{self.input}_upload',
                 data_sql_schema=self.data_sql_schema_primary + [Column('task_id', Integer)],
                 create_table=self.create_table
             )
@@ -152,7 +152,7 @@ class LabelStudioStep(PipelineStep):
 
             # Удаляем существующие задачи и перезаливаем их
             df_idx = data_to_index(df, self.primary_keys)
-            existing_tasks_df_without_annotations = output_uploader_dt.get_data(idx=df_idx)
+            existing_tasks_df_without_annotations = input_uploader_dt.get_data(idx=df_idx)
             if len(existing_tasks_df_without_annotations) > 0:
                 existing_idx = data_to_index(existing_tasks_df_without_annotations, self.primary_keys)
                 df_to_be_deleted = pd.merge(
@@ -233,7 +233,7 @@ class LabelStudioStep(PipelineStep):
                 name='upload_data_to_ls',
                 func=upload_tasks,
                 input_dts=[input_dt],
-                output_dts=[output_uploader_dt],
+                output_dts=[input_uploader_dt],
             ),
             DatatableTransformStepNoChangeList(
                 name='get_annotations_from_ls',
