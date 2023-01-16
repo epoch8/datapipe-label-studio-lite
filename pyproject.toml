@@ -13,7 +13,7 @@ numpy = "^1.21.0"
 SQLAlchemy = "^1.4.25"
 tqdm = "^4.60.0"
 requests = "^2.24.0"
-datapipe-core = "^0.11.10"
+datapipe-core = "^0.11.9"
 iteration-utilities = "^0.11.0"
 label-studio-sdk = "^0.0.16"
 
