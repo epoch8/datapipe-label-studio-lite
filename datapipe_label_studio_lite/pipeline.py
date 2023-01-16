@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import requests
+import pytz
 from typing import Any, Union, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
@@ -201,15 +201,15 @@ class LabelStudioStep(PipelineStep):
                     if 'created_ago' in ann:
                         del ann['created_ago']
                 return values
+            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [self.project.id]}))
 
-            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [int(self.project.id)]}))
             if sync_datetime_df.empty:
-                last_sync = datetime.fromtimestamp(0)
-                sync_datetime_df.loc[0, 'project_id'] = int(self.project.id)
-            else:
-                last_sync = sync_datetime_df.loc[0, 'datetime']
+                sync_datetime_df.loc[0, 'project_id'] = self.project.id
+                sync_datetime_df.loc[0, 'datetime'] = datetime.fromtimestamp(0)
 
-            now = datetime.now()
+            last_sync = sync_datetime_df.loc[0, 'datetime']
+
+            now = datetime.now(tz=pytz.utc)
             filters = Filters.create(
                 conjunction="and", items=[
                     Filters.item(
