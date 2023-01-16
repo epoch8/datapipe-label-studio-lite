@@ -233,7 +233,7 @@ class LabelStudioStep(PipelineStep):
                 )
                 output_dts[0].store_chunk(output_df)
 
-            if updated_ats > 0:
+            if len(updated_ats) > 0:
                 sync_datetime_df.loc[0, 'last_updated_at'] = max(updated_ats)
                 sync_datetime_dt.store_chunk(sync_datetime_df)
 
