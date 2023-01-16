@@ -213,7 +213,7 @@ class LabelStudioStep(PipelineStep):
                 conjunction="and", items=[
                     Filters.item(
                         name="tasks:updated_at",  # в sdk нету Column_LS.updated_at
-                        operator=Operator.GREATER_OR_EQUAL,
+                        operator=Operator.GREATER,
                         column_type=Type.Datetime,
                         value=Filters.value(value=Filters.datetime(last_sync))
                     )
