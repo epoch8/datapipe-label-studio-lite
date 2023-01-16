@@ -9,7 +9,7 @@ from datapipe.store.database import TableStoreDB
 from sqlalchemy import Integer, Column, JSON, DateTime, String
 
 from datapipe.types import ChangeList, data_to_index, index_to_data
-from datapipe.compute import PipelineStep, DataStore, Catalog, DatatableTransformStep
+from datapipe.compute import PipelineStep, DataStore, Table, Catalog, DatatableTransformStep
 from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
@@ -125,7 +125,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
-        catalog.add_datatable(f'{self.input}_upload', input_uploader_dt)
+        catalog.add_datatable(f'{self.input}_upload', Table(input_uploader_dt.table_store))
         sync_datetime_dt = ds.get_or_create_table(
             self.sync_table, TableStoreDB(
                 dbconn=self.dbconn,
@@ -134,7 +134,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
-        catalog.add_datatable(self.sync_table, sync_datetime_dt)
+        catalog.add_datatable(self.sync_table, Table(sync_datetime_dt.table_store))
         output_dt = ds.get_or_create_table(
             self.output, TableStoreDB(
                 dbconn=self.dbconn,
@@ -143,7 +143,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
-        catalog.add_datatable(self.output, output_dt)
+        catalog.add_datatable(self.output, Table(output_dt.table_store))
 
         def upload_tasks(df: pd.DataFrame):
             """
