@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import requests
 from typing import Any, Union, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
@@ -164,6 +165,8 @@ class LabelStudioStep(PipelineStep):
                     on=self.primary_keys
                 )
                 for task_id in df_to_be_deleted['task_id']:
+                    if int(task_id) == -1:
+                        continue
                     self.project.make_request(
                         method='DELETE', url=f"api/tasks/{task_id}/",
                     )
