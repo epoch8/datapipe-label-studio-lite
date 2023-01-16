@@ -131,7 +131,7 @@ class LabelStudioStep(PipelineStep):
             self.sync_table, TableStoreDB(
                 dbconn=self.dbconn,
                 name=self.sync_table,
-                data_sql_schema=[Column('project_id', String, primary_key=True), Column('datetime', DateTime)],
+                data_sql_schema=[Column('project_id', Integer, primary_key=True), Column('datetime', DateTime)],
                 create_table=self.create_table
             )
         )
@@ -202,9 +202,10 @@ class LabelStudioStep(PipelineStep):
                         del ann['created_ago']
                 return values
 
-            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [self.project.id]}))
+            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({'project_id': [int(self.project.id)]}))
             if sync_datetime_df.empty:
                 last_sync = datetime.fromtimestamp(0)
+                sync_datetime_df.loc[0, 'project_id'] = int(self.project.id)
             else:
                 last_sync = sync_datetime_df.loc[0, 'datetime']
 
