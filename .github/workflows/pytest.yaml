@@ -114,7 +114,7 @@ jobs:
 
     - name: Test with pytest
       run: |
-        poetry run pytest -n 4 -vv -x
+        poetry run pytest -vv -x
       env:
         LABEL_STUDIO_HOST: localhost
         LABEL_STUDIO_PORT: 8080
