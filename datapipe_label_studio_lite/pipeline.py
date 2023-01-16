@@ -125,6 +125,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
+        catalog.add_datatable(f'{self.input}_upload', input_uploader_dt)
         sync_datetime_dt = ds.get_or_create_table(
             self.sync_table, TableStoreDB(
                 dbconn=self.dbconn,
@@ -133,6 +134,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
+        catalog.add_datatable(self.sync_table, sync_datetime_dt)
         output_dt = ds.get_or_create_table(
             self.output, TableStoreDB(
                 dbconn=self.dbconn,
@@ -141,6 +143,7 @@ class LabelStudioStep(PipelineStep):
                 create_table=self.create_table
             )
         )
+        catalog.add_datatable(self.output, output_dt)
 
         def upload_tasks(df: pd.DataFrame):
             """
