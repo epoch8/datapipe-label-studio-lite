@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-import pytz
 from typing import Any, Union, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
 from datapipe.store.database import TableStoreDB
+from datetime import datetime, timezone
 
 from sqlalchemy import Integer, Column, JSON, DateTime, String
 
@@ -15,7 +15,7 @@ from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Type
+from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
@@ -131,7 +131,7 @@ class LabelStudioStep(PipelineStep):
             self.sync_table, TableStoreDB(
                 dbconn=self.dbconn,
                 name=self.sync_table,
-                data_sql_schema=[Column('project_id', Integer, primary_key=True), Column('datetime', DateTime)],
+                data_sql_schema=[Column('project_id', Integer, primary_key=True), Column('last_updated_at', DateTime)],
                 create_table=self.create_table
             )
         )
@@ -205,11 +205,10 @@ class LabelStudioStep(PipelineStep):
 
             if sync_datetime_df.empty:
                 sync_datetime_df.loc[0, 'project_id'] = self.project.id
-                sync_datetime_df.loc[0, 'datetime'] = datetime.fromtimestamp(0)
+                sync_datetime_df.loc[0, 'last_updated_at'] = datetime.fromtimestamp(0, tz=timezone.utc)
 
-            last_sync = sync_datetime_df.loc[0, 'datetime']
+            last_sync = sync_datetime_df.loc[0, 'last_updated_at']
 
-            now = datetime.now(tz=pytz.utc)
             filters = Filters.create(
                 conjunction="and", items=[
                     Filters.item(
@@ -220,7 +219,9 @@ class LabelStudioStep(PipelineStep):
                     )
                 ]
             )
+            updated_ats = []
             for tasks_page in get_tasks_iter(self.project, filters=filters):
+                updated_ats.extend([datetime.strptime(task['updated_at'], DATETIME_FORMAT) for task in tasks_page])
                 output_df = pd.DataFrame.from_records(
                     {
                         **{
@@ -230,10 +231,11 @@ class LabelStudioStep(PipelineStep):
                         'annotations': [_cleanup(task['annotations']) for task in tasks_page]
                     }
                 )
-                output_dts[0].store_chunk(output_df, now=now.timestamp())
+                output_dts[0].store_chunk(output_df)
 
-            sync_datetime_df.loc[0, 'datetime'] = now
-            sync_datetime_dt.store_chunk(sync_datetime_df, now=now.timestamp())
+            if updated_ats > 0:
+                sync_datetime_df.loc[0, 'last_updated_at'] = max(updated_ats)
+                sync_datetime_dt.store_chunk(sync_datetime_df)
 
         return [
             BatchTransformStep(
