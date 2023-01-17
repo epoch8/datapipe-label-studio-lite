@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
-import requests
 from typing import Any, Union, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
 from datapipe.store.database import TableStoreDB
-from datetime import datetime, timezone
 
 from sqlalchemy import Integer, Column, JSON, DateTime, String
 
@@ -158,7 +156,7 @@ class LabelStudioStep(PipelineStep):
             if df.empty or len(df) == 0:
                 return
 
-            df_merge_uploader = pd.merge(df, df_uploader, on=[self.primary_keys])
+            df_merge_uploader = pd.merge(df, df_uploader, on=self.primary_keys)
             # Удаляем существующие задачи и перезаливаем их
             if len(df_merge_uploader) > 0:
                 for task_id in df_merge_uploader['task_id']:
@@ -166,11 +164,7 @@ class LabelStudioStep(PipelineStep):
                         method='DELETE', url=self.project.get_url(f"api/tasks/{task_id}/"),
                         headers=self.project.headers, cookies=self.project.cookies
                     )
-                    if response.status_code in [204]:
-                        pass
-                    elif response.status_code in [404]:
-                        pass
-                    else:
+                    if response.status_code not in [204, 404]:
                         response.raise_for_status()
 
             # Добавляем новые задачи
