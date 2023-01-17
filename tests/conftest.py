@@ -44,7 +44,7 @@ def assert_df_equal(a: pd.DataFrame, b: pd.DataFrame) -> bool:
 
 @pytest.fixture
 def dbconn():
-    DBCONNSTR = 'sqlite:///:memory:'
+    DBCONNSTR = 'sqlite+pysqlite3:///:memory:'
     DB_TEST_SCHEMA = None
 
     if DB_TEST_SCHEMA:

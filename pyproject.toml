@@ -17,6 +17,9 @@ datapipe-core = "^0.11.9"
 iteration-utilities = "^0.11.0"
 label-studio-sdk = "^0.0.16"
 
+pysqlite3-binary = {version="^0.5.0", optional=true}
+sqlalchemy-pysqlite3-binary = {version="^0.0.4", optional=true}
+
 [tool.poetry.dev-dependencies]
 pytest = "*"
 pytest-xdist = "*"
@@ -31,3 +34,6 @@ types-setuptools = "^57.4.7"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.extras]
+sqlite = ["pysqlite3-binary", "sqlalchemy-pysqlite3"]
