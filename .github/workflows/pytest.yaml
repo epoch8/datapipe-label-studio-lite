@@ -110,7 +110,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        poetry install
+        poetry install -E sqlite
 
     - name: Test with pytest
       run: |

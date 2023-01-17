@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datapipe.run_config import RunConfig
 from datapipe.store.database import TableStoreDB
 
-from sqlalchemy import Integer, Column, JSON, DateTime, String
+from sqlalchemy import Integer, Column, JSON, DateTime
 
 from datapipe.types import ChangeList, data_to_index, index_to_data
 from datapipe.compute import PipelineStep, DataStore, Table, Catalog, DatatableTransformStep
