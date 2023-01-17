@@ -186,8 +186,8 @@ class LabelStudioStep(PipelineStep):
                 for idx in df.index
             ]
             tasks_added = self.project.import_tasks(tasks=data_to_be_added)
-            df_idx['task_id'] = tasks_added
-            return df_idx
+            df['task_id'] = tasks_added
+            return df
 
         def get_annotations_from_ls(
             ds: DataStore, input_dts: List[DataTable], output_dts: List[DataTable],
