@@ -146,8 +146,7 @@ class LabelStudioStep(PipelineStep):
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
         def upload_tasks(
-            df: pd.DataFrame,
-            df_uploader: pd.DataFrame
+            df: pd.DataFrame
         ):
             """
                 Добавляет в LS новые задачи с заданными ключами.
@@ -156,10 +155,17 @@ class LabelStudioStep(PipelineStep):
             if df.empty or len(df) == 0:
                 return
 
-            df_merge_uploader = pd.merge(df, df_uploader, on=self.primary_keys)
             # Удаляем существующие задачи и перезаливаем их
-            if len(df_merge_uploader) > 0:
-                for task_id in df_merge_uploader['task_id']:
+            df_idx = data_to_index(df, self.primary_keys)
+            existing_tasks_df_without_annotations = input_uploader_dt.get_data(idx=df_idx)
+            if len(existing_tasks_df_without_annotations) > 0:
+                existing_idx = data_to_index(existing_tasks_df_without_annotations, self.primary_keys)
+                df_to_be_deleted = pd.merge(
+                    left=index_to_data(df, existing_idx),
+                    right=existing_tasks_df_without_annotations[self.primary_keys + ['task_id']],
+                    on=self.primary_keys
+                )
+                for task_id in df_to_be_deleted['task_id']:
                     response = self.project.session.request(
                         method='DELETE', url=self.project.get_url(f"api/tasks/{task_id}/"),
                         headers=self.project.headers, cookies=self.project.cookies
@@ -237,7 +243,7 @@ class LabelStudioStep(PipelineStep):
             BatchTransformStep(
                 name='upload_data_to_ls',
                 func=upload_tasks,
-                input_dts=[input_dt, input_uploader_dt],
+                input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
             ),
             DatatableTransformStepNoChangeList(
