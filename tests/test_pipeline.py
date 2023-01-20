@@ -291,6 +291,14 @@ def test_ls_moderation(
     assert project is not None
 
     tasks_res = project.get_tasks()
+    assert len(tasks_res) == TASKS_COUNT
+
+    run_steps(ds, steps)
+
+    # Check that after second run no tasks are leaking
+    tasks_res = project.get_tasks()
+    assert len(tasks_res) == TASKS_COUNT
+
     tasks = np.array(tasks_res)
     for idxs in [[0, 3, 6, 7, 9], [1, 2, 4, 5, 8]]:
         annotations = [
