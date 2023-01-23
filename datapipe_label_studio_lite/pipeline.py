@@ -245,6 +245,7 @@ class LabelStudioStep(PipelineStep):
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
+                chunk_size=100,
             ),
             DatatableTransformStepNoChangeList(
                 name='get_annotations_from_ls',
