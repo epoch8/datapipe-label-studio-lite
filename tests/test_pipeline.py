@@ -510,7 +510,7 @@ def test_ls_when_task_is_missing_from_ls(
     assert project is not None
 
     tasks = project.get_tasks()
-    assert len(tasks) == TASKS_COUNT
+    assert len(tasks) == TASKS_COUNT + 1
 
     df_ls = ds.get_table("ls_annotations").get_data()
 
