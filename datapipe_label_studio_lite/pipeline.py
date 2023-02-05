@@ -127,7 +127,7 @@ class LabelStudioStep(PipelineStep):
 
         return self._project
 
-    def _delete_task_from_ls(self, task_id: Any) -> None:
+    def _delete_task_from_project(self, task_id: Any) -> None:
         response = self.project.session.request(
             method="DELETE",
             url=self.project.get_url(f"api/tasks/{task_id}/"),
