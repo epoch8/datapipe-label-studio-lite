@@ -127,6 +127,16 @@ class LabelStudioStep(PipelineStep):
 
         return self._project
 
+    def _delete_task_from_ls(self, task_id: Any) -> None:
+        response = self.project.session.request(
+            method="DELETE",
+            url=self.project.get_url(f"api/tasks/{task_id}/"),
+            headers=self.project.headers,
+            cookies=self.project.cookies,
+        )
+        if response.status_code not in [204, 404]:
+            response.raise_for_status()
+
     def _convert_data_if_need(self, value: Any):
         if isinstance(value, np.int64):
             return int(value)
@@ -199,14 +209,7 @@ class LabelStudioStep(PipelineStep):
                     on=self.primary_keys,
                 )
                 for task_id in df_to_be_deleted["task_id"]:
-                    response = self.project.session.request(
-                        method="DELETE",
-                        url=self.project.get_url(f"api/tasks/{task_id}/"),
-                        headers=self.project.headers,
-                        cookies=self.project.cookies,
-                    )
-                    if response.status_code not in [204, 404]:
-                        response.raise_for_status()
+                    self._delete_task_from_project(task_id)
 
             # Добавляем новые задачи
             data_to_be_added = [
