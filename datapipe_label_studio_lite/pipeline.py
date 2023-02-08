@@ -134,7 +134,28 @@ class LabelStudioStep(PipelineStep):
             headers=self.project.headers,
             cookies=self.project.cookies,
         )
-        if response.status_code not in [204, 404]:
+        if response.status_code not in [
+            204,
+            404,
+            500,  # Hack for strange behavior in production
+            # [2023-02-05 20:15:39,105] [core.utils.common::custom_exception_handler::82] [ERROR] 5c208521-949c-4d43-ac1d-9a19cd3bfaaf Task matching query does not exist.
+            # Traceback (most recent call last):
+            #   File "/usr/local/lib/python3.8/dist-packages/rest_framework/views.py", line 506, in dispatch
+            #     response = handler(request, *args, **kwargs)
+            #   File "/usr/local/lib/python3.8/dist-packages/django/utils/decorators.py", line 43, in _wrapper
+            #     return bound_method(*args, **kwargs)
+            #   File "/label-studio/label_studio/webhooks/utils.py", line 155, in wrap
+            #     instance = self.get_object()
+            #   File "/usr/local/lib/python3.8/dist-packages/rest_framework/generics.py", line 83, in get_object
+            #     queryset = self.filter_queryset(self.get_queryset())
+            #   File "/label-studio/label_studio/tasks/api.py", line 196, in get_queryset
+            #     project = Task.objects.get(id=self.request.parser_context['kwargs'].get('pk')).project.id
+            #   File "/usr/local/lib/python3.8/dist-packages/django/db/models/manager.py", line 85, in manager_method
+            #     return getattr(self.get_queryset(), name)(*args, **kwargs)
+            #   File "/usr/local/lib/python3.8/dist-packages/django/db/models/query.py", line 429, in get
+            #     raise self.model.DoesNotExist(
+            # tasks.models.Task.DoesNotExist: Task matching query does not exist.
+        ]:
             response.raise_for_status()
 
     def _convert_data_if_need(self, value: Any):
