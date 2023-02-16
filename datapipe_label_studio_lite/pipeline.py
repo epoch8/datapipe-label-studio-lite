@@ -24,8 +24,8 @@ class DatatableTransformStepNoChangeList(DatatableTransformStep):
 
 @dataclass
 class LabelStudioStep(PipelineStep):
-    input: str
-    output: str
+    input: str # Input Table name
+    output: str # Output Table name
     sync_table: str
 
     ls_url: str
