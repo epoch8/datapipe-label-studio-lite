@@ -1,10 +1,13 @@
 [tool.poetry]
-name = "datapipe_label_studio_lite"
-version = "0.1.1"
+name = "datapipe-label-studio-lite"
+version = "0.2.0"
 description = ""
-authors = ["Alexander Kozlov <bobokvsky@epoch8.co>"]
+authors = [
+    "Alexander Kozlov <bobokvsky@epoch8.co>",
+    "Andrey Tatarinov <a@tatarinov.co>",
+]
 
-exclude=["tests", "examples"]
+exclude = ["tests", "examples"]
 
 [tool.poetry.dependencies]
 python = ">=3.8, <3.11"
