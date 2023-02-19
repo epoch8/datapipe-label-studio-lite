@@ -285,7 +285,7 @@ class LabelStudioStep(PipelineStep):
 
             last_sync = sync_datetime_df.loc[0, "last_updated_at"]
 
-            logger.info(f"Syncing project {self.project.id} starting with {last_sync}")
+            logger.debug(f"Syncing project {self.project.id} starting with {last_sync}")
 
             filters = Filters.create(
                 conjunction="and",
@@ -300,7 +300,7 @@ class LabelStudioStep(PipelineStep):
             )
 
             for tasks_page in get_tasks_iter(self.project, filters=filters):
-                logger.info(f"Got tasks page {len(tasks_page)}")
+                logger.debug(f"Got tasks page {len(tasks_page)}")
 
                 if len(tasks_page) > 0:
                     output_df = (
@@ -331,7 +331,7 @@ class LabelStudioStep(PipelineStep):
 
                     max_updated_at = max(output_df["updated_at"])
 
-                    logger.info(
+                    logger.debug(
                         f"Updating bookmark for project {self.project.id} to {max_updated_at}"
                     )
                     sync_datetime_dt.store_chunk(
