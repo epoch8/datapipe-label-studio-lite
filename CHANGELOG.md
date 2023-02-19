@@ -1,3 +1,9 @@
+# WIP 0.2.1
+
+* Fix handling of duplicate entities at sync
+* Add logging to `get_annotations_from_ls`
+* Add labels `func` and `group` to steps
+
 # 0.2.0
 
 * Add `name` parameter to `LabelStudioStep`
