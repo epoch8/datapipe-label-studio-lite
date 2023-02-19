@@ -1,13 +1,14 @@
-import numpy as np
-import pandas as pd
 from typing import Any, Union, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from datapipe.run_config import RunConfig
-from datapipe.store.database import TableStoreDB
+import logging
 
+import numpy as np
+import pandas as pd
 from sqlalchemy import Integer, Column, JSON, DateTime
 
+from datapipe.run_config import RunConfig
+from datapipe.store.database import TableStoreDB
 from datapipe.types import ChangeList, data_to_index, index_to_data
 from datapipe.compute import (
     PipelineStep,
@@ -18,9 +19,14 @@ from datapipe.compute import (
 )
 from datapipe.core_steps import BatchTransformStep, DataTable
 from datapipe.store.database import DBConn
+
 import label_studio_sdk
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
+
+from .sdk_utils import get_project_by_title, get_tasks_iter
+
+
+logger = logging.getLogger("datapipe.label_studio_lite")
 
 
 class DatatableTransformStepNoChangeList(DatatableTransformStep):
@@ -279,6 +285,8 @@ class LabelStudioStep(PipelineStep):
 
             last_sync = sync_datetime_df.loc[0, "last_updated_at"]
 
+            logger.info(f"Syncing project {self.project.id} starting with {last_sync}")
+
             filters = Filters.create(
                 conjunction="and",
                 items=[
@@ -290,37 +298,55 @@ class LabelStudioStep(PipelineStep):
                     )
                 ],
             )
-            updated_ats = []
-            for tasks_page in get_tasks_iter(self.project, filters=filters):
-                updated_ats.extend(
-                    [
-                        datetime.strptime(task["updated_at"], DATETIME_FORMAT)
-                        for task in tasks_page
-                    ]
-                )
-                output_df = pd.DataFrame.from_records(
-                    {
-                        **{
-                            primary_key: [
-                                task["data"][primary_key] for task in tasks_page
-                            ]
-                            for primary_key in self.primary_keys
-                        },
-                        "annotations": [
-                            _cleanup(task["annotations"]) for task in tasks_page
-                        ],
-                    }
-                )
-                output_dts[0].store_chunk(output_df)
 
-            if len(updated_ats) > 0:
-                sync_datetime_df.loc[0, "last_updated_at"] = max(updated_ats)
-                sync_datetime_dt.store_chunk(sync_datetime_df)
+            for tasks_page in get_tasks_iter(self.project, filters=filters):
+                logger.info(f"Got tasks page {len(tasks_page)}")
+
+                if len(tasks_page) > 0:
+                    output_df = (
+                        pd.DataFrame.from_records(
+                            {
+                                **{
+                                    primary_key: [
+                                        task["data"][primary_key] for task in tasks_page
+                                    ]
+                                    for primary_key in self.primary_keys
+                                },
+                                "annotations": [
+                                    _cleanup(task["annotations"]) for task in tasks_page
+                                ],
+                                "updated_at": [
+                                    datetime.strptime(
+                                        task["updated_at"], DATETIME_FORMAT
+                                    )
+                                    for task in tasks_page
+                                ],
+                            }
+                        )
+                        .sort_values("updated_at")
+                        .drop_duplicates(self.primary_keys, keep="last")
+                    )
+
+                    output_dts[0].store_chunk(output_df.drop(columns=["updated_at"]))
+
+                    max_updated_at = max(output_df["updated_at"])
+
+                    logger.info(
+                        f"Updating bookmark for project {self.project.id} to {max_updated_at}"
+                    )
+                    sync_datetime_dt.store_chunk(
+                        pd.DataFrame(
+                            {
+                                "project_id": [self.project.id],
+                                "last_updated_at": [max_updated_at],
+                            }
+                        )
+                    )
 
         return [
             BatchTransformStep(
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels={"step": "upload_data_to_ls"},
+                labels={"func": "upload_data_to_ls", "group": "labelstudio"},
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
@@ -328,6 +354,7 @@ class LabelStudioStep(PipelineStep):
             ),
             DatatableTransformStepNoChangeList(
                 name=f"{self.name_prefix}get_annotations_from_ls",
+                labels={"func": "get_annotations_from_ls", "group": "labelstudio"},
                 func=get_annotations_from_ls,
                 input_dts=[],
                 output_dts=[output_dt],
