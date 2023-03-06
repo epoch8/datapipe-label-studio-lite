@@ -48,6 +48,7 @@ class LabelStudioStep(PipelineStep):
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
 
+    secondary_input: Optional[str] = None  # Secondary Input Table name. Does not trigger the pipeline if changed.
     name: Optional[str] = None
 
     project_label_config_at_create: str = ""
@@ -211,6 +212,13 @@ class LabelStudioStep(PipelineStep):
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
+        # если указана, забираем из каталога вторичную таблицу
+        if self.secondary_input is not None:
+            self.secondary_dt = catalog.get_datatable(ds, self.secondary_input)
+        else:
+            self.secondary_dt = None
+        
+
         def upload_tasks(df: pd.DataFrame):
             """
             Добавляет в LS новые задачи с заданными ключами.
@@ -238,6 +246,22 @@ class LabelStudioStep(PipelineStep):
                 for task_id in df_to_be_deleted["task_id"]:
                     self._delete_task_from_project(task_id)
 
+            # обогащаем датафрейм данными из вторичной таблицы
+            if self.secondary_dt is not None:
+                df_secondary_data = self.secondary_dt.get_data(idx=df_idx)
+                secondary_columns = list(set(df_secondary_data.columns) - set(df.columns))
+                df = pd.merge(
+                    left=df,
+                    right=df_secondary_data,
+                    on=self.primary_keys,
+                )
+                # convert all boolean columns to string because of serialization issues for np.bool_ type
+                for col in df.columns:
+                    if df[col].dtype == np.bool_:
+                        df[col] = df[col].astype(str)
+            else:
+                secondary_columns = []
+
             # Добавляем новые задачи
             data_to_be_added = [
                 {
@@ -246,7 +270,7 @@ class LabelStudioStep(PipelineStep):
                             primary_key: self._convert_data_if_need(
                                 df.loc[idx, primary_key]
                             )
-                            for primary_key in self.primary_keys + self.data_columns
+                            for primary_key in self.primary_keys + self.data_columns + secondary_columns
                         }
                     }
                 }
