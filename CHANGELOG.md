@@ -1,3 +1,6 @@
+# 0.2.1
+* Removed `sqlite3` from required dependencies in pyproject.toml
+
 # 0.2.0
 
 * Add `name` parameter to `LabelStudioStep`
