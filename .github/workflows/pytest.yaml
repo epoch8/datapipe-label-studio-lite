@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install
+          poetry install --dev-dependency
 
       - name: Lint with flake8
         run: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install
+          poetry install --dev-dependency
 
       - name: Test with pytest
         run: |
