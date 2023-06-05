@@ -14,9 +14,8 @@ from datapipe.compute import (
     DataStore,
     Table,
     Catalog,
-    DatatableTransformStep,
 )
-from datapipe.core_steps import BatchTransformStep, DataTable
+from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
