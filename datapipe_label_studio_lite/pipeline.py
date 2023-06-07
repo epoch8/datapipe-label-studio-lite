@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Any, Union, List, Optional
+from typing import Any, Dict, Union, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
@@ -14,20 +14,12 @@ from datapipe.compute import (
     DataStore,
     Table,
     Catalog,
-    DatatableTransformStep,
 )
-from datapipe.core_steps import BatchTransformStep, DataTable
+from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
-
-
-class DatatableTransformStepNoChangeList(DatatableTransformStep):
-    def run_changelist(
-        self, ds: DataStore, changelist: ChangeList, run_config: RunConfig = None
-    ) -> ChangeList:
-        return ChangeList()
 
 
 @dataclass
@@ -255,6 +247,7 @@ class LabelStudioStep(PipelineStep):
             input_dts: List[DataTable],
             output_dts: List[DataTable],
             run_config: RunConfig,
+            kwargs: Dict[str, Any]
         ):
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
@@ -319,14 +312,15 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
+                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels={"step": "upload_data_to_ls"},
+                labels=[("stage", "upload_data_to_ls")],
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
                 chunk_size=100,
             ),
-            DatatableTransformStepNoChangeList(
+            DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
                 func=get_annotations_from_ls,
                 input_dts=[],

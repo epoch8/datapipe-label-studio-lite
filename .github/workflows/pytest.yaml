@@ -54,6 +54,7 @@ jobs:
         test-db-env: ["postgres"]
         test-ls-env:
           [
+            "heartexlabs/label-studio:1.8.0",
             "heartexlabs/label-studio:1.7.0",
             "heartexlabs/label-studio:1.6.0",
             "heartexlabs/label-studio:1.5.0.post0",
