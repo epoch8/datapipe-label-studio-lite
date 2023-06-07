@@ -14,8 +14,8 @@ from sqlalchemy.sql.sqltypes import String
 from pkg_resources import parse_version
 
 from datapipe.types import data_to_index
-from datapipe.compute import Catalog, Pipeline, Table, DatatableTransformStep
-from datapipe.core_steps import do_batch_generate, BatchTransform
+from datapipe.compute import Catalog, Pipeline, Table
+from datapipe.core_steps import do_batch_generate, BatchTransform, DatatableTransformStep
 from datapipe.datatable import DataStore
 from datapipe.store.database import TableStoreDB
 from datapipe.compute import build_compute, run_steps
