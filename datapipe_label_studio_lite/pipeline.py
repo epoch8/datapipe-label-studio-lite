@@ -33,7 +33,6 @@ class LabelStudioStep(PipelineStep):
     input: str  # Input Table name
     output: str  # Output Table name
     sync_table: str
-    kwargs: Dict[str, Any]
 
     ls_url: str
     api_key: str
@@ -278,6 +277,7 @@ class LabelStudioStep(PipelineStep):
             input_dts: List[DataTable],
             output_dts: List[DataTable],
             run_config: RunConfig,
+            kwargs: Dict[str, Any]
         ):
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
