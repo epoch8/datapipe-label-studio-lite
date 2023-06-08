@@ -1,4 +1,4 @@
-from typing import Any, Union, List, Optional
+from typing import Any, Dict, Union, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
 import logging
@@ -15,9 +15,8 @@ from datapipe.compute import (
     DataStore,
     Table,
     Catalog,
-    DatatableTransformStep,
 )
-from datapipe.core_steps import BatchTransformStep, DataTable
+from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
 
 import label_studio_sdk
@@ -29,18 +28,12 @@ from .sdk_utils import get_project_by_title, get_tasks_iter
 logger = logging.getLogger("datapipe.label_studio_lite")
 
 
-class DatatableTransformStepNoChangeList(DatatableTransformStep):
-    def run_changelist(
-        self, ds: DataStore, changelist: ChangeList, run_config: RunConfig = None
-    ) -> ChangeList:
-        return ChangeList()
-
-
 @dataclass
 class LabelStudioStep(PipelineStep):
     input: str  # Input Table name
     output: str  # Output Table name
     sync_table: str
+    kwargs: Dict[str, Any]
 
     ls_url: str
     api_key: str
@@ -369,6 +362,7 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
+                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
                 labels={"func": "upload_data_to_ls", "group": "labelstudio"},
                 func=upload_tasks,
@@ -376,7 +370,7 @@ class LabelStudioStep(PipelineStep):
                 output_dts=[input_uploader_dt],
                 chunk_size=100,
             ),
-            DatatableTransformStepNoChangeList(
+            DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
                 labels={"func": "get_annotations_from_ls", "group": "labelstudio"},
                 func=get_annotations_from_ls,
