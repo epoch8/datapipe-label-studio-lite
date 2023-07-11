@@ -247,12 +247,13 @@ class LabelStudioStep(PipelineStep):
             input_dts: List[DataTable],
             output_dts: List[DataTable],
             run_config: RunConfig,
-            kwargs: Dict[str, Any]
+            kwargs: Dict[str, Any],
         ):
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
             дате последней синхронизации
             """
+
             # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
             def _cleanup(values):
                 for ann in values:
@@ -312,7 +313,6 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
-                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
                 labels=[("stage", "upload_data_to_ls")],
                 func=upload_tasks,

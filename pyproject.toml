@@ -16,21 +16,21 @@ numpy = "^1.21.0"
 SQLAlchemy = "^1.4.25"
 tqdm = "^4.60.0"
 requests = "^2.24.0"
-datapipe-core = {version=">=0.12, <0.13", allow-prereleases = true}
+datapipe-core = {version=">=0.12.0-alpha.1, <0.13", allow-prereleases = true}
 iteration-utilities = "^0.11.0"
 label-studio-sdk = "^0.0.16"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
 pytest-xdist = "*"
-flake8 = "^3.9.2"
-mypy = "^0.910"
-black = "^21.7b0"
+flake8 = "*"
+mypy = "*"
+black = "*"
 pandas-stubs = "^1.2.0"
 types-requests = "^2.25.6"
 pytest-cases = "^3.6.4"
 types-setuptools = "^57.4.7"
-datapipe-core = {version=">=0.12, <0.13", extras=["sqlite"], allow-prereleases = true}
+datapipe-core = {version=">=0.12.0-alpha.1, <0.13", extras=["sqlite"], allow-prereleases = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
