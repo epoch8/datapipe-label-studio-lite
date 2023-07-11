@@ -3,11 +3,14 @@ import pandas as pd
 from typing import Any, Dict, Union, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from datapipe.run_config import RunConfig
-from datapipe.store.database import TableStoreDB
+import logging
 
+import numpy as np
+import pandas as pd
 from sqlalchemy import Integer, Column, JSON, DateTime
 
+from datapipe.run_config import RunConfig
+from datapipe.store.database import TableStoreDB
 from datapipe.types import ChangeList, data_to_index, index_to_data
 from datapipe.compute import (
     PipelineStep,
@@ -17,9 +20,14 @@ from datapipe.compute import (
 )
 from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
+
 import label_studio_sdk
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
+
+from .sdk_utils import get_project_by_title, get_tasks_iter
+
+
+logger = logging.getLogger("datapipe.label_studio_lite")
 
 
 @dataclass
@@ -34,6 +42,9 @@ class LabelStudioStep(PipelineStep):
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
 
+    secondary_input: Optional[
+        str
+    ] = None  # Secondary Input Table name. Does not trigger the pipeline if changed.
     name: Optional[str] = None
 
     project_label_config_at_create: str = ""
@@ -197,6 +208,12 @@ class LabelStudioStep(PipelineStep):
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
+        # если указана, забираем из каталога вторичную таблицу
+        if self.secondary_input is not None:
+            self.secondary_dt = catalog.get_datatable(ds, self.secondary_input)
+        else:
+            self.secondary_dt = None
+
         def upload_tasks(df: pd.DataFrame):
             """
             Добавляет в LS новые задачи с заданными ключами.
@@ -224,6 +241,24 @@ class LabelStudioStep(PipelineStep):
                 for task_id in df_to_be_deleted["task_id"]:
                     self._delete_task_from_project(task_id)
 
+            # обогащаем датафрейм данными из вторичной таблицы
+            if self.secondary_dt is not None:
+                df_secondary_data = self.secondary_dt.get_data(idx=df_idx)
+                secondary_columns = list(
+                    set(df_secondary_data.columns) - set(df.columns)
+                )
+                df = pd.merge(
+                    left=df,
+                    right=df_secondary_data,
+                    on=self.primary_keys,
+                )
+                # convert all boolean columns to string because of serialization issues for np.bool_ type
+                for col in df.columns:
+                    if df[col].dtype == np.bool_:
+                        df[col] = df[col].astype(str)
+            else:
+                secondary_columns = []
+
             # Добавляем новые задачи
             data_to_be_added = [
                 {
@@ -232,7 +267,9 @@ class LabelStudioStep(PipelineStep):
                             primary_key: self._convert_data_if_need(
                                 df.loc[idx, primary_key]
                             )
-                            for primary_key in self.primary_keys + self.data_columns
+                            for primary_key in self.primary_keys
+                            + self.data_columns
+                            + secondary_columns
                         }
                     }
                 }
@@ -273,6 +310,8 @@ class LabelStudioStep(PipelineStep):
 
             last_sync = sync_datetime_df.loc[0, "last_updated_at"]
 
+            logger.debug(f"Syncing project {self.project.id} starting with {last_sync}")
+
             filters = Filters.create(
                 conjunction="and",
                 items=[
@@ -284,32 +323,50 @@ class LabelStudioStep(PipelineStep):
                     )
                 ],
             )
-            updated_ats = []
-            for tasks_page in get_tasks_iter(self.project, filters=filters):
-                updated_ats.extend(
-                    [
-                        datetime.strptime(task["updated_at"], DATETIME_FORMAT)
-                        for task in tasks_page
-                    ]
-                )
-                output_df = pd.DataFrame.from_records(
-                    {
-                        **{
-                            primary_key: [
-                                task["data"][primary_key] for task in tasks_page
-                            ]
-                            for primary_key in self.primary_keys
-                        },
-                        "annotations": [
-                            _cleanup(task["annotations"]) for task in tasks_page
-                        ],
-                    }
-                )
-                output_dts[0].store_chunk(output_df)
 
-            if len(updated_ats) > 0:
-                sync_datetime_df.loc[0, "last_updated_at"] = max(updated_ats)
-                sync_datetime_dt.store_chunk(sync_datetime_df)
+            for tasks_page in get_tasks_iter(self.project, filters=filters):
+                logger.debug(f"Got tasks page {len(tasks_page)}")
+
+                if len(tasks_page) > 0:
+                    output_df = (
+                        pd.DataFrame.from_records(
+                            {
+                                **{
+                                    primary_key: [
+                                        task["data"][primary_key] for task in tasks_page
+                                    ]
+                                    for primary_key in self.primary_keys
+                                },
+                                "annotations": [
+                                    _cleanup(task["annotations"]) for task in tasks_page
+                                ],
+                                "updated_at": [
+                                    datetime.strptime(
+                                        task["updated_at"], DATETIME_FORMAT
+                                    )
+                                    for task in tasks_page
+                                ],
+                            }
+                        )
+                        .sort_values("updated_at")
+                        .drop_duplicates(self.primary_keys, keep="last")
+                    )
+
+                    output_dts[0].store_chunk(output_df.drop(columns=["updated_at"]))
+
+                    max_updated_at = max(output_df["updated_at"])
+
+                    logger.debug(
+                        f"Updating bookmark for project {self.project.id} to {max_updated_at}"
+                    )
+                    sync_datetime_dt.store_chunk(
+                        pd.DataFrame(
+                            {
+                                "project_id": [self.project.id],
+                                "last_updated_at": [max_updated_at],
+                            }
+                        )
+                    )
 
         return [
             BatchTransformStep(
@@ -322,6 +379,7 @@ class LabelStudioStep(PipelineStep):
             ),
             DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
+                labels={"func": "get_annotations_from_ls", "group": "labelstudio"},
                 func=get_annotations_from_ls,
                 input_dts=[],
                 output_dts=[output_dt],
