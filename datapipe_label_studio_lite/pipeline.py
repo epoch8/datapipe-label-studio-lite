@@ -1,3 +1,5 @@
+import numpy as np
+import pandas as pd
 from typing import Any, Dict, Union, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -40,7 +42,9 @@ class LabelStudioStep(PipelineStep):
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
 
-    secondary_input: Optional[str] = None  # Secondary Input Table name. Does not trigger the pipeline if changed.
+    secondary_input: Optional[
+        str
+    ] = None  # Secondary Input Table name. Does not trigger the pipeline if changed.
     name: Optional[str] = None
 
     project_label_config_at_create: str = ""
@@ -209,7 +213,6 @@ class LabelStudioStep(PipelineStep):
             self.secondary_dt = catalog.get_datatable(ds, self.secondary_input)
         else:
             self.secondary_dt = None
-        
 
         def upload_tasks(df: pd.DataFrame):
             """
@@ -241,7 +244,9 @@ class LabelStudioStep(PipelineStep):
             # обогащаем датафрейм данными из вторичной таблицы
             if self.secondary_dt is not None:
                 df_secondary_data = self.secondary_dt.get_data(idx=df_idx)
-                secondary_columns = list(set(df_secondary_data.columns) - set(df.columns))
+                secondary_columns = list(
+                    set(df_secondary_data.columns) - set(df.columns)
+                )
                 df = pd.merge(
                     left=df,
                     right=df_secondary_data,
@@ -262,7 +267,9 @@ class LabelStudioStep(PipelineStep):
                             primary_key: self._convert_data_if_need(
                                 df.loc[idx, primary_key]
                             )
-                            for primary_key in self.primary_keys + self.data_columns + secondary_columns
+                            for primary_key in self.primary_keys
+                            + self.data_columns
+                            + secondary_columns
                         }
                     }
                 }
@@ -277,12 +284,13 @@ class LabelStudioStep(PipelineStep):
             input_dts: List[DataTable],
             output_dts: List[DataTable],
             run_config: RunConfig,
-            kwargs: Dict[str, Any]
+            kwargs: Dict[str, Any],
         ):
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
             дате последней синхронизации
             """
+
             # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
             def _cleanup(values):
                 for ann in values:
@@ -362,9 +370,8 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
-                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels={"func": "upload_data_to_ls", "group": "labelstudio"},
+                labels=[("stage", "upload_data_to_ls")],
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],

@@ -1,10 +1,15 @@
-# WIP 0.2.2
+# 0.2.3
+
 * Fix handling of duplicate entities at sync
 * Add logging to `get_annotations_from_ls`
 * Add labels `func` and `group` to steps
-* Update Datapipe Core version (0.12.0)
+
+# 0.2.2
+
+* Update datapipe-core version (0.12.0)
 
 # 0.2.1
+
 * Removed `sqlite3` from required dependencies in pyproject.toml
 
 # 0.2.0
