@@ -15,11 +15,14 @@ from pkg_resources import parse_version
 
 from datapipe.types import data_to_index
 from datapipe.compute import Catalog, Pipeline, Table
-from datapipe.core_steps import do_batch_generate, BatchTransform, DatatableTransformStep
+from datapipe.core_steps import (
+    do_batch_generate,
+    BatchTransform,
+    DatatableTransformStep,
+)
 from datapipe.datatable import DataStore
 from datapipe.store.database import TableStoreDB
 from datapipe.compute import build_compute, run_steps
-from tests.conftest import assert_df_equal
 
 from datapipe_label_studio_lite.pipeline import LabelStudioStep
 import label_studio_sdk
