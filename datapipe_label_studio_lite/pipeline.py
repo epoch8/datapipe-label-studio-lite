@@ -313,6 +313,7 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
+                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
                 labels=[("stage", "upload_data_to_ls")],
                 func=upload_tasks,
