@@ -8,7 +8,7 @@ from datapipe.store.database import TableStoreDB
 
 from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import IndexDF, data_to_index, index_difference, index_to_data
+from datapipe.types import data_to_index
 from datapipe.compute import (
     PipelineStep,
     DataStore,
@@ -17,7 +17,6 @@ from datapipe.compute import (
 )
 from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
-from datapipe.core_steps import logger
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
@@ -187,55 +186,31 @@ class LabelStudioStep(PipelineStep):
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
-        def upload_tasks(df: pd.DataFrame, idx: IndexDF):
+        def upload_tasks(df: pd.DataFrame):
             """
             Добавляет в LS новые задачи с заданными ключами.
             (Не поддерживает удаление задач, если в input они пропадают)
             """
             if df.empty or len(df) == 0:
-                return pd.DataFrame(columns=self.primary_keys + ["task_id"])
+                return
 
-            df_idx = data_to_index(df, self.primary_keys)
+            # Удаляем существующие задачи и перезаливаем их
+            idx_to_be_del = data_to_index(df, self.primary_keys)
+            df_existing_tasks = input_uploader_dt.get_data(idx=idx_to_be_del)
             if self.delete_unannotated_tasks_only_on_update:
-                df_existing_tasks = input_uploader_dt.get_data(idx=idx)
-                df_existing_tasks_with_output = pd.merge(df_existing_tasks, output_dt.get_data(idx=idx), how="left")
-                deleted_idx = index_difference(df_idx, idx)
-                if len(df_existing_tasks_with_output) > 0:
-                    have_annotations = df_existing_tasks_with_output["annotations"].apply(
-                        lambda ann: ann is not None and len(ann) > 0
-                    )
-                    df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
-                    df_existing_tasks_to_be_del = pd.merge(
-                        df_existing_tasks_with_output[~have_annotations], deleted_idx, how="outer"
-                    )
-                else:
-                    df_existing_tasks_to_be_stayed = pd.DataFrame(columns=self.primary_keys + ["task_id"])
-                    df_existing_tasks_to_be_del = pd.merge(
-                        pd.DataFrame(columns=self.primary_keys + ["task_id"]), deleted_idx, how="outer"
-                    )
-                df_to_be_uploaded = pd.concat(
-                    [
-                        pd.merge(df, df_existing_tasks_to_be_del, on=self.primary_keys),
-                        index_to_data(
-                            df,
-                            index_difference(
-                                index_difference(
-                                    df_idx, data_to_index(df_existing_tasks_to_be_stayed, self.primary_keys)
-                                ),
-                                data_to_index(df_existing_tasks_to_be_del, self.primary_keys),
-                            ),
-                        ),
-                    ],
-                    ignore_index=True,
-                )
+                df_output = output_dt.get_data(idx=idx_to_be_del)
+                df_existing_tasks_with_output = pd.merge(df_existing_tasks, df_output, how="left")
+                have_annotations = df_existing_tasks["annotations"].apply(lambda x: (x is not None and len(x) > 0))
+                df_existing_tasks_to_be_del = df_existing_tasks_with_output[~have_annotations]
+                df_existing_tasks_with_ann = df_existing_tasks_with_output[have_annotations]
             else:
-                df_existing_tasks = input_uploader_dt.get_data(idx=idx)
-                df_existing_tasks_to_be_del = input_uploader_dt.get_data(idx=idx)
-                df_to_be_uploaded = df
+                df_existing_tasks_to_be_del = df_existing_tasks
+            if len(df_existing_tasks_to_be_del) > 0:
+                for task_id in df_existing_tasks_to_be_del["task_id"]:
+                    self._delete_task_from_project(task_id)
 
-            for task_id in df_existing_tasks_to_be_del["task_id"]:
-                self._delete_task_from_project(task_id)
-
+            df_to_be_uploaded = df_existing_tasks_to_be_del
+            # Добавляем новые задачи
             data_to_be_added = [
                 {
                     "data": {
@@ -250,10 +225,9 @@ class LabelStudioStep(PipelineStep):
             tasks_added = self.project.import_tasks(tasks=data_to_be_added)
             df_to_be_uploaded["task_id"] = tasks_added
             if self.delete_unannotated_tasks_only_on_update:
-                df_res = pd.concat([df_existing_tasks_to_be_stayed, df_to_be_uploaded], ignore_index=True)
+                df_res = pd.concat([df_existing_tasks_with_ann, df_to_be_uploaded], ignore_index=True)
             else:
                 df_res = df_to_be_uploaded
-            logger.debug(f"Deleted {len(df_existing_tasks_to_be_del)} tasks, uploaded {len(data_to_be_added)} tasks.")
             return df_res[self.primary_keys + ["task_id"]]
 
         def get_annotations_from_ls(
@@ -314,7 +288,6 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
-                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
                 labels=[("stage", "upload_data_to_ls")],
                 func=upload_tasks,
