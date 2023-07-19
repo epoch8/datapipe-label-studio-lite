@@ -185,10 +185,10 @@ class CasesLabelStudio:
         ds = DataStore(dbconn, create_meta_table=True)
         catalog = Catalog(
             {
-                "raw_data": Table(  # генерируем в тестах своим генератором
+                "ls_input_data_raw": Table(  # генерируем в тестах своим генератором
                     store=TableStoreDB(
                         dbconn=dbconn,
-                        name="raw_data",
+                        name="ls_input_data_raw",
                         data_sql_schema=[
                             Column("id", String(), primary_key=True),
                             Column("text", String()),
@@ -217,12 +217,12 @@ class CasesLabelStudio:
                         include_preannotations=include_preannotations,
                         include_prepredictions=include_prepredictions,
                     ),
-                    inputs=["raw_data"],
+                    inputs=["ls_input_data_raw"],
                     outputs=["ls_input_data"],
                 ),
                 LabelStudioStep(
                     input="ls_input_data",
-                    output="ls_annotations",
+                    output="ls_output",
                     sync_table="ls_sync_datetime",
                     ls_url=ls_url,
                     api_key=api_key,
@@ -239,7 +239,7 @@ class CasesLabelStudio:
             ]
         )
         # predictions_step = LabelStudioPredictionsStep(
-        #     input='raw_data',
+        #     input='ls_input_data_raw',
         #     output='ls_predictions',
         #     ls_url=ls_url,
         #     api_key=api_key,
@@ -300,15 +300,15 @@ def test_ls_moderation(
     do_batch_generate(
         func=gen_data_df,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
-    assert len(ds.get_table("ls_annotations").get_data()) == TASKS_COUNT
+    assert len(ds.get_table("ls_output").get_data()) == TASKS_COUNT
 
     # Проверяем проверку на заливку уже размеченных данных
     if include_preannotations:
-        assert len(ds.get_table("ls_annotations").get_data()) == TASKS_COUNT
-        df_annotation = ds.get_table("ls_annotations").get_data()
+        assert len(ds.get_table("ls_output").get_data()) == TASKS_COUNT
+        df_annotation = ds.get_table("ls_output").get_data()
         for idx in df_annotation.index:
             assert len(df_annotation.loc[idx, "annotations"]) == 1
             assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"]["choices"][0] in ["Class1", "Class2"]
@@ -350,7 +350,7 @@ def test_ls_moderation(
             )
         run_steps(ds, steps)
         idxs_df = pd.DataFrame.from_records({"id": [task["data"]["id"] for task in tasks[idxs]]})
-        df_annotation = ds.get_table("ls_annotations").get_data(idx=data_to_index(idxs_df, ["id"]))
+        df_annotation = ds.get_table("ls_output").get_data(idx=data_to_index(idxs_df, ["id"]))
         for idx in df_annotation.index:
             assert len(df_annotation.loc[idx, "annotations"]) == (1 + include_preannotations)
             assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"]["choices"][0] in (
@@ -406,7 +406,7 @@ def test_ls_when_data_is_changed(
     do_batch_generate(
         func=_gen,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -414,7 +414,7 @@ def test_ls_when_data_is_changed(
     do_batch_generate(
         func=_gen2,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -424,7 +424,7 @@ def test_ls_when_data_is_changed(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT
 
-    df_ls = ds.get_table("ls_annotations").get_data()
+    df_ls = ds.get_table("ls_output").get_data()
 
     for idx in df_ls.index:
         # Разметка не должна уйти:
@@ -477,7 +477,7 @@ def test_ls_when_task_is_missing_from_ls(
     do_batch_generate(
         func=_gen,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -495,7 +495,7 @@ def test_ls_when_task_is_missing_from_ls(
     do_batch_generate(
         func=_gen2,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -505,7 +505,7 @@ def test_ls_when_task_is_missing_from_ls(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT + 1
 
-    df_ls = ds.get_table("ls_annotations").get_data()
+    df_ls = ds.get_table("ls_output").get_data()
 
     for idx in df_ls.index:
         # Разметка не должна уйти:
@@ -516,7 +516,6 @@ def test_ls_when_task_is_missing_from_ls(
         #     assert len(df_ls.loc[idx, 'predictions']) == include_prepredictions + include_predictions
 
 
-@pytest.mark.skip(reason="LabelStudioStep doesn't support deleting yet")
 @parametrize_with_cases(
     "ds, catalog, steps, project_title, include_preannotations, include_prepredictions, "
     "include_predictions, label_studio_session, delete_unannotated_tasks_only_on_update",
@@ -553,7 +552,7 @@ def test_ls_when_some_data_is_deleted(
     do_batch_generate(
         func=_gen,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -561,7 +560,7 @@ def test_ls_when_some_data_is_deleted(
     do_batch_generate(
         func=_gen2,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     # These steps should delete tasks with same id accordingly, as data input has changed
     run_steps(ds, steps)
@@ -572,7 +571,11 @@ def test_ls_when_some_data_is_deleted(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT - 5
 
-    df_ls = ds.get_table("ls_annotations").get_data()
+    df_ls_upload = ds.get_table("ls_input_data_upload").get_data()
+    assert len(df_ls_upload) == TASKS_COUNT - 5
+
+    df_ls = ds.get_table("ls_output").get_data()
+    assert len(df_ls) == TASKS_COUNT
 
     for idx in df_ls.index:
         # Разметка не должна уйти:
@@ -619,7 +622,7 @@ def test_ls_specific_updating_scenary(
     do_batch_generate(
         func=_gen,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
 
@@ -660,7 +663,7 @@ def test_ls_specific_updating_scenary(
     do_batch_generate(
         func=_gen2,
         ds=ds,
-        output_dts=[ds.get_table("raw_data")],
+        output_dts=[ds.get_table("ls_input_data_raw")],
     )
     # Табличка с лейбел студией должна обновиться
     run_steps(ds, steps)
@@ -668,9 +671,13 @@ def test_ls_specific_updating_scenary(
     tasks_after = project.get_tasks()
     assert len(tasks_after) == 10
 
-    df_ls_input = ds.get_table("ls_input_data_upload").get_data()
-    df_ls = ds.get_table("ls_annotations").get_data()
-    df_ls = pd.merge(df_ls_input, df_ls)
+    df_ls_upload = ds.get_table("ls_input_data_upload").get_data()
+    assert len(df_ls_upload) == 10
+
+    df_ls = ds.get_table("ls_output").get_data()
+    assert len(df_ls) == 11
+
+    df_ls = pd.merge(df_ls_upload, df_ls)
     for idx in df_ls.index:
         if df_ls.loc[idx, "id"] in [f"task_{i}" for i in [0, 1, 2, 6, 7, 8]]:
             # Разметка при обновлении задачи не должна уйти, если delete_unannotated_tasks_only_on_update=False

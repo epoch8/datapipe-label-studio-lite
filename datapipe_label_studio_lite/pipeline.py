@@ -192,11 +192,11 @@ class LabelStudioStep(PipelineStep):
             Добавляет в LS новые задачи с заданными ключами.
             (Не поддерживает удаление задач, если в input они пропадают)
             """
-            if df.empty or len(df) == 0:
+            if df.empty and idx.empty:
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
-            df_idx = data_to_index(df, self.primary_keys)
             if self.delete_unannotated_tasks_only_on_update:
+                df_idx = data_to_index(df, self.primary_keys)
                 df_existing_tasks = input_uploader_dt.get_data(idx=idx)
                 df_existing_tasks_with_output = pd.merge(df_existing_tasks, output_dt.get_data(idx=idx), how="left")
                 deleted_idx = index_difference(df_idx, idx)
@@ -205,36 +205,38 @@ class LabelStudioStep(PipelineStep):
                         lambda ann: ann is not None and len(ann) > 0
                     )
                     df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
-                    df_existing_tasks_to_be_del = pd.merge(
+                    df_existing_tasks_to_be_deleted = pd.merge(
                         df_existing_tasks_with_output[~have_annotations], deleted_idx, how="outer"
                     )
                 else:
                     df_existing_tasks_to_be_stayed = pd.DataFrame(columns=self.primary_keys + ["task_id"])
-                    df_existing_tasks_to_be_del = pd.merge(
+                    df_existing_tasks_to_be_deleted = pd.merge(
                         pd.DataFrame(columns=self.primary_keys + ["task_id"]), deleted_idx, how="outer"
                     )
                 df_to_be_uploaded = pd.concat(
                     [
-                        pd.merge(df, df_existing_tasks_to_be_del, on=self.primary_keys),
+                        pd.merge(df, df_existing_tasks_to_be_deleted, on=self.primary_keys),
                         index_to_data(
                             df,
                             index_difference(
                                 index_difference(
                                     df_idx, data_to_index(df_existing_tasks_to_be_stayed, self.primary_keys)
                                 ),
-                                data_to_index(df_existing_tasks_to_be_del, self.primary_keys),
+                                data_to_index(df_existing_tasks_to_be_deleted, self.primary_keys),
                             ),
                         ),
                     ],
                     ignore_index=True,
                 )
             else:
-                df_existing_tasks = input_uploader_dt.get_data(idx=idx)
-                df_existing_tasks_to_be_del = input_uploader_dt.get_data(idx=idx)
+                df_existing_tasks_to_be_deleted = input_uploader_dt.get_data(idx=idx)
                 df_to_be_uploaded = df
 
-            for task_id in df_existing_tasks_to_be_del["task_id"]:
+            for task_id in df_existing_tasks_to_be_deleted["task_id"]:
                 self._delete_task_from_project(task_id)
+
+            if df.empty:
+                return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             data_to_be_added = [
                 {
@@ -249,11 +251,14 @@ class LabelStudioStep(PipelineStep):
             ]
             tasks_added = self.project.import_tasks(tasks=data_to_be_added)
             df_to_be_uploaded["task_id"] = tasks_added
+
             if self.delete_unannotated_tasks_only_on_update:
                 df_res = pd.concat([df_existing_tasks_to_be_stayed, df_to_be_uploaded], ignore_index=True)
             else:
                 df_res = df_to_be_uploaded
-            logger.debug(f"Deleted {len(df_existing_tasks_to_be_del)} tasks, uploaded {len(data_to_be_added)} tasks.")
+            logger.debug(
+                f"Deleted {len(df_existing_tasks_to_be_deleted)} tasks, uploaded {len(data_to_be_added)} tasks."
+            )
             return df_res[self.primary_keys + ["task_id"]]
 
         def get_annotations_from_ls(
