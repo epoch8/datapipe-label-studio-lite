@@ -1,5 +1,10 @@
+# 0.3.0
+* Update datapipe-core version (0.13.0-alpha.4)
+* Added argument `delete_unannotated_tasks_only_on_update` in `LabelStudioStep`.
+* Removed some dependencies
+
 # 0.2.2
-Update datapipe-core version (0.12.0)
+* Update datapipe-core version (0.12.0)
 
 # 0.2.1
 * Removed `sqlite3` from required dependencies in pyproject.toml
