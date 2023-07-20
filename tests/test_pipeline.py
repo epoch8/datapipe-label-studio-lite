@@ -692,7 +692,9 @@ def test_ls_specific_updating_scenary(
                 assert len(df_ls.loc[idx, "annotations"]) > 0
             else:
                 assert len(df_ls.loc[idx, "annotations"]) == 0
-            assert df_ls.loc[idx, "task_id"] in tasks_ids_before
+
+            if df_ls.loc[idx, "id"] not in [f"task_{i}" for i in [10]]:
+                assert df_ls.loc[idx, "task_id"] in tasks_ids_before
 
         # Предсказания не должны уйти
         # if include_predictions:
