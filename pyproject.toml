@@ -28,7 +28,7 @@ pandas-stubs = "^1.2.0"
 types-requests = "^2.25.6"
 pytest-cases = "^3.6.4"
 types-setuptools = "^57.4.7"
-datapipe-core = {version=">=0.13.0-alpha.4, <0.14", extras=["sqlite"], allow-prereleases = true}
+datapipe-core = {version=">=0.13.0-alpha.5, <0.14", extras=["sqlite"], allow-prereleases = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
