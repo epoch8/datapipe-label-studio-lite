@@ -16,7 +16,7 @@ numpy = "^1.21.0"
 SQLAlchemy = "^1.4.25"
 tqdm = "^4.60.0"
 requests = "^2.24.0"
-datapipe-core = {version=">=0.13.0-alpha.5, <0.14", allow-prereleases = true}
+datapipe-core = {version=">=0.12.0-alpha.1, <0.14", allow-prereleases = true}
 iteration-utilities = "^0.11.0"
 label-studio-sdk = "^0.0.16"
 
