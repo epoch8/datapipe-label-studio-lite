@@ -263,7 +263,7 @@ class LabelStudioStep(PipelineStep):
             else:
                 df_res = df_to_be_uploaded
             logger.debug(
-                f"Deleted {len(df_existing_tasks_to_be_deleted)} tasks, uploaded {len(data_to_be_added)} tasks."
+                f"Deleted {len(df_existing_tasks_to_be_deleted)} tasks, uploaded {len(df_to_be_uploaded)} tasks."
             )
             return df_res[self.primary_keys + ["task_id"]]
 
