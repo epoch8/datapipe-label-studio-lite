@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, Union, List, Optional
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 
 import numpy as np
@@ -51,7 +51,7 @@ class LabelStudioStep(PipelineStep):
     project_description_at_create: str = ""
 
     create_table: bool = False
-    labels: Optional[Labels] = []
+    labels: Optional[Labels] = field(dict)
 
     def __post_init__(self):
         assert self.dbconn is not None
