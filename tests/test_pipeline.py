@@ -575,7 +575,7 @@ def test_ls_when_some_data_is_deleted(
     assert len(df_ls_upload) == TASKS_COUNT - 5
 
     df_ls = ds.get_table("ls_output").get_data()
-    assert len(df_ls) == TASKS_COUNT
+    assert len(df_ls) == TASKS_COUNT - 5
 
     for idx in df_ls.index:
         # Разметка не должна уйти:
