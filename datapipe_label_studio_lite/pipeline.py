@@ -371,7 +371,7 @@ class LabelStudioStep(PipelineStep):
 
         return [
             BatchTransformStep(
-                ds,
+                ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
                 labels={"stage": "upload_data_to_ls", **self.labels},  # type: ignore
                 func=upload_tasks,
