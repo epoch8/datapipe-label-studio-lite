@@ -51,7 +51,7 @@ class LabelStudioStep(PipelineStep):
     project_description_at_create: str = ""
 
     create_table: bool = False
-    labels: Optional[Labels] = field(dict)
+    labels: Optional[Labels] = field(default_factory=dict)
 
     def __post_init__(self):
         assert self.dbconn is not None
