@@ -1,3 +1,7 @@
+# 0.2.4
+* Update datapipe-core version (0.13.alpha5)
+* Added labels attribute to LabelStudioStep, passed to steps
+
 # 0.2.3
 
 * Fix handling of duplicate entities at sync
