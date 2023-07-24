@@ -195,6 +195,7 @@ class LabelStudioStep(PipelineStep):
             if df.empty and idx.empty:
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
+            idx = data_to_index(idx, self.primary_keys)
             if self.delete_unannotated_tasks_only_on_update:
                 df_idx = data_to_index(df, self.primary_keys)
                 df_existing_tasks = input_uploader_dt.get_data(idx=idx)
@@ -202,7 +203,7 @@ class LabelStudioStep(PipelineStep):
                 deleted_idx = index_difference(df_idx, idx)
                 if len(df_existing_tasks_with_output) > 0:
                     have_annotations = df_existing_tasks_with_output["annotations"].apply(
-                        lambda ann: ann is not None and len(ann) > 0
+                        lambda ann: not pd.isna(ann) and len(ann) > 0
                     )
                     df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
                     df_existing_tasks_to_be_deleted = pd.merge(
@@ -232,25 +233,30 @@ class LabelStudioStep(PipelineStep):
                 df_existing_tasks_to_be_deleted = input_uploader_dt.get_data(idx=idx)
                 df_to_be_uploaded = df
 
-            for task_id in df_existing_tasks_to_be_deleted["task_id"]:
-                self._delete_task_from_project(task_id)
+            if len(df_existing_tasks_to_be_deleted) > 0:
+                for task_id in df_existing_tasks_to_be_deleted["task_id"]:
+                    self._delete_task_from_project(task_id)
+                output_dt.delete_by_idx(
+                    idx=data_to_index(df_existing_tasks_to_be_deleted, self.primary_keys)
+                )
 
             if df.empty:
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
-            data_to_be_added = [
-                {
-                    "data": {
-                        **{
-                            primary_key: self._convert_data_if_need(df_to_be_uploaded.loc[idx, primary_key])
-                            for primary_key in self.primary_keys + self.data_columns
+            if len(df_to_be_uploaded) > 0:
+                data_to_be_added = [
+                    {
+                        "data": {
+                            **{
+                                primary_key: self._convert_data_if_need(df_to_be_uploaded.loc[idx, primary_key])
+                                for primary_key in self.primary_keys + self.data_columns
+                            }
                         }
                     }
-                }
-                for idx in df_to_be_uploaded.index
-            ]
-            tasks_added = self.project.import_tasks(tasks=data_to_be_added)
-            df_to_be_uploaded["task_id"] = tasks_added
+                    for idx in df_to_be_uploaded.index
+                ]
+                tasks_added = self.project.import_tasks(tasks=data_to_be_added)
+                df_to_be_uploaded["task_id"] = tasks_added
 
             if self.delete_unannotated_tasks_only_on_update:
                 df_res = pd.concat([df_existing_tasks_to_be_stayed, df_to_be_uploaded], ignore_index=True)
