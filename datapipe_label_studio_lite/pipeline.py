@@ -8,7 +8,7 @@ from datapipe.store.database import TableStoreDB
 
 from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import Labels, data_to_index, index_to_data
+from datapipe.types import IndexDF, data_to_index, index_difference, index_to_data
 from datapipe.compute import (
     PipelineStep,
     DataStore,
@@ -17,6 +17,7 @@ from datapipe.compute import (
 )
 from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
 from datapipe.store.database import DBConn
+from datapipe.core_steps import logger
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
@@ -40,21 +41,16 @@ class LabelStudioStep(PipelineStep):
     project_description_at_create: str = ""
 
     create_table: bool = False
+    delete_unannotated_tasks_only_on_update: bool = False
 
     labels: Optional[Labels] = None
 
     def __post_init__(self):
         assert self.dbconn is not None
         self.data_sql_schema: List[Column] = [column for column in self.data_sql_schema]
-        self.data_sql_schema_primary: List[Column] = [
-            column for column in self.data_sql_schema if column.primary_key
-        ]
-        self.data_columns: List[str] = [
-            column.name for column in self.data_sql_schema if not column.primary_key
-        ]
-        self.primary_keys = [
-            column.name for column in self.data_sql_schema if column.primary_key
-        ]
+        self.data_sql_schema_primary: List[Column] = [column for column in self.data_sql_schema if column.primary_key]
+        self.data_columns: List[str] = [column.name for column in self.data_sql_schema if not column.primary_key]
+        self.primary_keys = [column.name for column in self.data_sql_schema if column.primary_key]
         for column in ["task_id", "annotations"]:
             assert (
                 column not in self.data_columns and column not in self.primary_keys
@@ -160,23 +156,18 @@ class LabelStudioStep(PipelineStep):
             return int(value)
         return value
 
-    def build_compute(
-        self, ds: DataStore, catalog: Catalog
-    ) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
         input_dt = catalog.get_datatable(ds, self.input)
         input_uploader_dt = ds.get_or_create_table(
             f"{self.input}_upload",
             TableStoreDB(
                 dbconn=self.dbconn,
                 name=f"{self.input}_upload",
-                data_sql_schema=self.data_sql_schema_primary
-                + [Column("task_id", Integer)],
+                data_sql_schema=self.data_sql_schema_primary + [Column("task_id", Integer)],
                 create_table=self.create_table,
             ),
         )
-        catalog.add_datatable(
-            f"{self.input}_upload", Table(input_uploader_dt.table_store)
-        )
+        catalog.add_datatable(f"{self.input}_upload", Table(input_uploader_dt.table_store))
         sync_datetime_dt = ds.get_or_create_table(
             self.sync_table,
             TableStoreDB(
@@ -195,69 +186,104 @@ class LabelStudioStep(PipelineStep):
             TableStoreDB(
                 dbconn=self.dbconn,
                 name=self.output,
-                data_sql_schema=self.data_sql_schema_primary
-                + [Column("annotations", JSON)],
+                data_sql_schema=self.data_sql_schema_primary + [Column("annotations", JSON)],
                 create_table=self.create_table,
             ),
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
-        def upload_tasks(df: pd.DataFrame):
+        def upload_tasks(df: pd.DataFrame, idx: IndexDF):
             """
             Добавляет в LS новые задачи с заданными ключами.
             (Не поддерживает удаление задач, если в input они пропадают)
             """
-            if df.empty or len(df) == 0:
-                return
+            if df.empty and idx.empty:
+                return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
-            # Удаляем существующие задачи и перезаливаем их
-            df_idx = data_to_index(df, self.primary_keys)
-            existing_tasks_df_without_annotations = input_uploader_dt.get_data(
-                idx=df_idx
-            )
-            if len(existing_tasks_df_without_annotations) > 0:
-                existing_idx = data_to_index(
-                    existing_tasks_df_without_annotations, self.primary_keys
-                )
-                df_to_be_deleted = pd.merge(
-                    left=index_to_data(df, existing_idx),
-                    right=existing_tasks_df_without_annotations[
-                        self.primary_keys + ["task_id"]
+            idx = data_to_index(idx, self.primary_keys)
+            if self.delete_unannotated_tasks_only_on_update:
+                df_idx = data_to_index(df, self.primary_keys)
+                df_existing_tasks = input_uploader_dt.get_data(idx=idx)
+                df_existing_tasks_with_output = pd.merge(df_existing_tasks, output_dt.get_data(idx=idx), how="left")
+                deleted_idx = index_difference(df_idx, idx)
+                if len(df_existing_tasks_with_output) > 0:
+                    have_annotations = df_existing_tasks_with_output["annotations"].apply(
+                        lambda ann: not pd.isna(ann) and len(ann) > 0
+                    )
+                    df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
+                    df_existing_tasks_to_be_deleted = pd.merge(
+                        df_existing_tasks_with_output[~have_annotations], deleted_idx, how="outer"
+                    )
+                else:
+                    df_existing_tasks_to_be_stayed = pd.DataFrame(columns=self.primary_keys + ["task_id"])
+                    df_existing_tasks_to_be_deleted = pd.merge(
+                        pd.DataFrame(columns=self.primary_keys + ["task_id"]), deleted_idx, how="outer"
+                    )
+                df_to_be_uploaded = pd.concat(
+                    [
+                        pd.merge(df, df_existing_tasks_to_be_deleted, on=self.primary_keys),
+                        index_to_data(
+                            df,
+                            index_difference(
+                                index_difference(
+                                    df_idx, data_to_index(df_existing_tasks_to_be_stayed, self.primary_keys)
+                                ),
+                                data_to_index(df_existing_tasks_to_be_deleted, self.primary_keys),
+                            ),
+                        ),
                     ],
-                    on=self.primary_keys,
+                    ignore_index=True,
                 )
-                for task_id in df_to_be_deleted["task_id"]:
-                    self._delete_task_from_project(task_id)
+            else:
+                df_existing_tasks_to_be_deleted = input_uploader_dt.get_data(idx=idx)
+                df_to_be_uploaded = df
 
-            # Добавляем новые задачи
-            data_to_be_added = [
-                {
-                    "data": {
-                        **{
-                            primary_key: self._convert_data_if_need(
-                                df.loc[idx, primary_key]
-                            )
-                            for primary_key in self.primary_keys + self.data_columns
+            if len(df_existing_tasks_to_be_deleted) > 0:
+                for task_id in df_existing_tasks_to_be_deleted["task_id"]:
+                    self._delete_task_from_project(task_id)
+                output_dt.delete_by_idx(
+                    idx=data_to_index(df_existing_tasks_to_be_deleted, self.primary_keys)
+                )
+
+            if df.empty:
+                return pd.DataFrame(columns=self.primary_keys + ["task_id"])
+
+            if len(df_to_be_uploaded) > 0:
+                data_to_be_added = [
+                    {
+                        "data": {
+                            **{
+                                primary_key: self._convert_data_if_need(df_to_be_uploaded.loc[idx, primary_key])
+                                for primary_key in self.primary_keys + self.data_columns
+                            }
                         }
                     }
-                }
-                for idx in df.index
-            ]
-            tasks_added = self.project.import_tasks(tasks=data_to_be_added)
-            df["task_id"] = tasks_added
-            return df[self.primary_keys + ["task_id"]]
+                    for idx in df_to_be_uploaded.index
+                ]
+                tasks_added = self.project.import_tasks(tasks=data_to_be_added)
+                df_to_be_uploaded["task_id"] = tasks_added
+
+            if self.delete_unannotated_tasks_only_on_update:
+                df_res = pd.concat([df_existing_tasks_to_be_stayed, df_to_be_uploaded], ignore_index=True)
+            else:
+                df_res = df_to_be_uploaded
+            logger.debug(
+                f"Deleted {len(df_existing_tasks_to_be_deleted)} tasks, uploaded {len(df_to_be_uploaded)} tasks."
+            )
+            return df_res[self.primary_keys + ["task_id"]]
 
         def get_annotations_from_ls(
             ds: DataStore,
             input_dts: List[DataTable],
             output_dts: List[DataTable],
             run_config: RunConfig,
-            kwargs: Dict[str, Any]
+            kwargs: Dict[str, Any],
         ):
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
             дате последней синхронизации
             """
+
             # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
             def _cleanup(values):
                 for ann in values:
@@ -265,15 +291,11 @@ class LabelStudioStep(PipelineStep):
                         del ann["created_ago"]
                 return values
 
-            sync_datetime_df = sync_datetime_dt.get_data(
-                idx=pd.DataFrame({"project_id": [self.project.id]})
-            )
+            sync_datetime_df = sync_datetime_dt.get_data(idx=pd.DataFrame({"project_id": [self.project.id]}))
 
             if sync_datetime_df.empty:
                 sync_datetime_df.loc[0, "project_id"] = self.project.id
-                sync_datetime_df.loc[0, "last_updated_at"] = datetime.fromtimestamp(
-                    0, tz=timezone.utc
-                )
+                sync_datetime_df.loc[0, "last_updated_at"] = datetime.fromtimestamp(0, tz=timezone.utc)
 
             last_sync = sync_datetime_df.loc[0, "last_updated_at"]
 
@@ -290,23 +312,14 @@ class LabelStudioStep(PipelineStep):
             )
             updated_ats = []
             for tasks_page in get_tasks_iter(self.project, filters=filters):
-                updated_ats.extend(
-                    [
-                        datetime.strptime(task["updated_at"], DATETIME_FORMAT)
-                        for task in tasks_page
-                    ]
-                )
+                updated_ats.extend([datetime.strptime(task["updated_at"], DATETIME_FORMAT) for task in tasks_page])
                 output_df = pd.DataFrame.from_records(
                     {
                         **{
-                            primary_key: [
-                                task["data"][primary_key] for task in tasks_page
-                            ]
+                            primary_key: [task["data"][primary_key] for task in tasks_page]
                             for primary_key in self.primary_keys
                         },
-                        "annotations": [
-                            _cleanup(task["annotations"]) for task in tasks_page
-                        ],
+                        "annotations": [_cleanup(task["annotations"]) for task in tasks_page],
                     }
                 )
                 output_dts[0].store_chunk(output_df)
