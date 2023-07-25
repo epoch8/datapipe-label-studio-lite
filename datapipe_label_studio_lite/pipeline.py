@@ -8,7 +8,7 @@ from datapipe.store.database import TableStoreDB
 
 from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import IndexDF, data_to_index, index_difference, index_to_data
+from datapipe.types import IndexDF, Labels, data_to_index, index_difference, index_to_data
 from datapipe.compute import (
     PipelineStep,
     DataStore,
