@@ -192,7 +192,7 @@ class LabelStudioStep(PipelineStep):
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
 
-        def upload_tasks(df: pd.DataFrame, idx: IndexDF):
+        def upload_tasks(df: pd.DataFrame, idx: IndexDF) -> pd.DataFrame:
             """
             Добавляет в LS новые задачи с заданными ключами.
             (Не поддерживает удаление задач, если в input они пропадают)
@@ -278,7 +278,7 @@ class LabelStudioStep(PipelineStep):
             output_dts: List[DataTable],
             run_config: RunConfig,
             kwargs: Dict[str, Any],
-        ):
+        ) -> None:
             """
             Записывает в табличку задачи из сервера LS вместе с разметкой согласно
             дате последней синхронизации
@@ -332,7 +332,7 @@ class LabelStudioStep(PipelineStep):
             BatchTransformStep(
                 ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels=[("stage", "upload_data_to_ls")] + self.labels,
+                labels=[("stage", "upload_data_to_ls"), *(self.labels or [])],
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
