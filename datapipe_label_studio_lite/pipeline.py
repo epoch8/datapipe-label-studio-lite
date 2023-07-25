@@ -8,7 +8,7 @@ from datapipe.store.database import TableStoreDB
 
 from sqlalchemy import Integer, Column, JSON, DateTime
 
-from datapipe.types import ChangeList, data_to_index, index_to_data
+from datapipe.types import Labels, data_to_index, index_to_data
 from datapipe.compute import (
     PipelineStep,
     DataStore,
@@ -41,6 +41,8 @@ class LabelStudioStep(PipelineStep):
 
     create_table: bool = False
 
+    labels: Optional[Labels] = None
+
     def __post_init__(self):
         assert self.dbconn is not None
         self.data_sql_schema: List[Column] = [column for column in self.data_sql_schema]
@@ -65,6 +67,9 @@ class LabelStudioStep(PipelineStep):
         # lazy initialization
         self._ls_client: Optional[label_studio_sdk.Client] = None
         self._project: Optional[label_studio_sdk.Project] = None
+
+        if self.labels is None:
+            self.labels = []
 
     @property
     def ls_client(self) -> label_studio_sdk.Client:
@@ -314,7 +319,7 @@ class LabelStudioStep(PipelineStep):
             BatchTransformStep(
                 ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels=[("stage", "upload_data_to_ls")],
+                labels=[("stage", "upload_data_to_ls")] + self.labels,
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
@@ -322,6 +327,7 @@ class LabelStudioStep(PipelineStep):
             ),
             DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
+                labels=self.labels,
                 func=get_annotations_from_ls,
                 input_dts=[],
                 output_dts=[output_dt],
