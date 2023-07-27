@@ -51,7 +51,7 @@ class LabelStudioStep(PipelineStep):
     project_description_at_create: str = ""
 
     create_table: bool = False
-    labels: Optional[Labels] = field(default_factory=dict)
+    labels: Optional[Labels] = field(default_factory=list)
 
     def __post_init__(self):
         assert self.dbconn is not None
@@ -373,7 +373,7 @@ class LabelStudioStep(PipelineStep):
             BatchTransformStep(
                 ds=ds,
                 name=f"{self.name_prefix}upload_data_to_ls",
-                labels={"stage": "upload_data_to_ls", "group": "labelstudio", **self.labels},  # type: ignore
+                labels=self.labels + [("stage", "upload_data_to_ls")],  # type: ignore
                 func=upload_tasks,
                 input_dts=[input_dt],
                 output_dts=[input_uploader_dt],
@@ -381,7 +381,7 @@ class LabelStudioStep(PipelineStep):
             ),
             DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
-                labels={"func": "get_annotations_from_ls", "group": "labelstudio", **self.labels},  # type: ignore
+                labels=self.labels + [("func", "get_annotations_from_ls")],  # type: ignore
                 func=get_annotations_from_ls,
                 input_dts=[],
                 output_dts=[output_dt],
