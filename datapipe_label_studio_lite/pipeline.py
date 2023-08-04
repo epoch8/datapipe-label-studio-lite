@@ -18,7 +18,8 @@ from datapipe.compute import (
     Table,
     Catalog,
 )
-from datapipe.core_steps import BatchTransformStep, DataTable, DatatableTransformStep
+from datapipe.step.batch_transform import BatchTransformStep, DataTable
+from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.store.database import DBConn
 
 import label_studio_sdk
