@@ -9,7 +9,11 @@ def sign_up(ls_url: str, email: str, password: str) -> Optional[str]:
     response_first = session.get(url=urljoin(ls_url, "user/signup/"))
     response_signup = session.post(
         url=urljoin(ls_url, "user/signup/"),
-        data={"csrfmiddlewaretoken": response_first.cookies["csrftoken"], "email": email, "password": password},
+        data={
+            "csrfmiddlewaretoken": response_first.cookies["csrftoken"],
+            "email": email,
+            "password": password,
+        },
     )
     if not response_signup.ok:
         raise ValueError("Signup failed.")
@@ -24,7 +28,11 @@ def login_and_get_token(ls_url: str, email: str, password: str) -> str:
     response = session.get(url=urljoin(ls_url, "user/login/"))
     session.post(
         url=urljoin(ls_url, "user/login/"),
-        data={"csrfmiddlewaretoken": response.cookies["csrftoken"], "email": email, "password": password},
+        data={
+            "csrfmiddlewaretoken": response.cookies["csrftoken"],
+            "email": email,
+            "password": password,
+        },
     )
     api_key = session.get(url=urljoin(ls_url, "api/current-user/token")).json()
     if "token" in api_key:
@@ -33,11 +41,15 @@ def login_and_get_token(ls_url: str, email: str, password: str) -> str:
         raise ValueError("Login failed.")
 
 
-def get_project_by_title(ls: label_studio_sdk.Client, title: str) -> Optional[label_studio_sdk.Project]:
+def get_project_by_title(
+    ls: label_studio_sdk.Client, title: str
+) -> Optional[label_studio_sdk.Project]:
     projects: List[label_studio_sdk.Project] = ls.get_projects()
     titles = [project.get_params()["title"] for project in projects]
     if title in titles:
-        assert titles.count(title) == 1, f'There are 2 or more projects with title="{title}"'
+        assert (
+            titles.count(title) == 1
+        ), f'There are 2 or more projects with title="{title}"'
         return projects[titles.index(title)]
     return None
 
