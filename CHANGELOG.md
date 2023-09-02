@@ -1,10 +1,13 @@
 # 0.3.0
+
 * Update datapipe-core version (0.13.0-alpha.4)
-* `LabelStudioStep` now supports deleting tasks in `upload` table. In `output` table older annotations are not deleted.
+* `LabelStudioStep` now supports deleting tasks in `upload` table. In `output`
+  table older annotations are not deleted.
 * Added argument `delete_unannotated_tasks_only_on_update` in `LabelStudioStep`.
 * Removed some dependencies
 
 # 0.2.2
+
 * Update datapipe-core version (0.12.0)
 
 # 0.2.1
