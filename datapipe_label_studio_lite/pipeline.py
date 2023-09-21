@@ -35,6 +35,29 @@ logger = logging.getLogger("dataipipe_label_studio_lite")
 
 
 @dataclass
+class GCSBucket:
+    bucket: str
+    google_application_credentials: Optional[str] = None
+
+    @property
+    def type():
+        return "gcs"
+
+
+@dataclass
+class S3Bucket:
+    bucket: str
+    key: str
+    secret: str
+    region_name: Optional[str] = None
+    endpoint_url: Optional[str] = None
+
+    @property
+    def type():
+        return "s3"
+
+
+@dataclass
 class LabelStudioStep(PipelineStep):
     input: str  # Input Table name
     output: str  # Output Table name
@@ -50,6 +73,7 @@ class LabelStudioStep(PipelineStep):
 
     project_label_config_at_create: str = ""
     project_description_at_create: str = ""
+    storages: Optional[List[Union[GCSBucket, S3Bucket]]] = None
 
     create_table: bool = False
     delete_unannotated_tasks_only_on_update: bool = False
@@ -81,8 +105,8 @@ class LabelStudioStep(PipelineStep):
         self._ls_client: Optional[label_studio_sdk.Client] = None
         self._project: Optional[label_studio_sdk.Project] = None
 
-        if self.labels is None:
-            self.labels = []
+        self.labels = self.labels or []
+        self.storages = self.storages or []
 
     @property
     def ls_client(self) -> label_studio_sdk.Client:
@@ -109,7 +133,7 @@ class LabelStudioStep(PipelineStep):
             else get_project_by_title(self.ls_client, str(self.project_identifier))
         )
         if self._project is None:
-            self._project = self.ls_client.start_project(
+            self._project: label_studio_sdk.Project = self.ls_client.start_project(
                 title=self.project_identifier,
                 description=self.project_description_at_create,
                 label_config=self.project_label_config_at_create,
@@ -134,7 +158,32 @@ class LabelStudioStep(PipelineStep):
                 task_data_password=None,
                 control_weights={},
             )
-
+            logger.info(f"Project with {self.project_identifier=} not found, created new project with id={self._project.id}")
+        storages_response = self.ls_client.make_request(
+            'GET', "/api/storages", params=dict(project=self._project.id)
+        )
+        connected_buckets = [
+            f"{storage['type']}://{storage.get('bucket', None)}"
+            for storage in storages_response.json()
+        ]
+        for storage in self.storages:
+            if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
+                if isinstance(storage, S3Bucket):
+                    result = self._project.connect_s3_import_storage(
+                        bucket=storage.bucket,
+                        title=storage_name,
+                        aws_access_key_id=storage.key,
+                        aws_secret_access_key=storage.secret,
+                        s3_endpoint=storage.endpoint_url,
+                        region_name=storage.region_name
+                    )
+                elif isinstance(storage, GCSBucket):
+                    result = self._project.connect_google_import_storage(
+                        bucket=storage.bucket,
+                        title=storage_name,
+                        google_application_credentials=storage.google_application_credentials
+                    )
+                logger.info(f"Adding storage {storage_name=} to project: {result}")
         return self._project
 
     def _delete_task_from_project(self, task_id: Any) -> None:
