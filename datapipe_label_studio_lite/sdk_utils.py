@@ -128,6 +128,8 @@ def get_tasks_iter(
             )
             yield data["tasks"]
             page += 1
+            if data.get("end_pagination", False):
+                break
         # we'll get 404 from API on empty page
         except label_studio_sdk.project.LabelStudioException:
             break

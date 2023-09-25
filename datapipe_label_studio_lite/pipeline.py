@@ -40,7 +40,7 @@ class GCSBucket:
     google_application_credentials: Optional[str] = None
 
     @property
-    def type():
+    def type(self):
         return "gcs"
 
 
@@ -53,7 +53,7 @@ class S3Bucket:
     endpoint_url: Optional[str] = None
 
     @property
-    def type():
+    def type(self):
         return "s3"
 
 
@@ -65,10 +65,10 @@ class LabelStudioStep(PipelineStep):
 
     ls_url: str
     api_key: str
-    dbconn: Union[DBConn, str]
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
 
+    dbconn: Optional[DBConn] = None
     name: Optional[str] = None
 
     project_label_config_at_create: str = ""
@@ -81,7 +81,6 @@ class LabelStudioStep(PipelineStep):
     labels: Optional[Labels] = None
 
     def __post_init__(self):
-        assert self.dbconn is not None
         self.data_sql_schema: List[Column] = [column for column in self.data_sql_schema]
         self.data_sql_schema_primary: List[Column] = [
             column for column in self.data_sql_schema if column.primary_key
@@ -229,7 +228,7 @@ class LabelStudioStep(PipelineStep):
         input_uploader_dt = ds.get_or_create_table(
             f"{self.input}_upload",
             TableStoreDB(
-                dbconn=self.dbconn,
+                dbconn=self.dbconn or ds.meta_dbconn,
                 name=f"{self.input}_upload",
                 data_sql_schema=self.data_sql_schema_primary
                 + [Column("task_id", Integer)],
@@ -242,7 +241,7 @@ class LabelStudioStep(PipelineStep):
         sync_datetime_dt = ds.get_or_create_table(
             self.sync_table,
             TableStoreDB(
-                dbconn=self.dbconn,
+                dbconn=self.dbconn or ds.meta_dbconn,
                 name=self.sync_table,
                 data_sql_schema=[
                     Column("project_id", Integer, primary_key=True),
@@ -255,7 +254,7 @@ class LabelStudioStep(PipelineStep):
         output_dt = ds.get_or_create_table(
             self.output,
             TableStoreDB(
-                dbconn=self.dbconn,
+                dbconn=self.dbconn or ds.meta_dbconn,
                 name=self.output,
                 data_sql_schema=self.data_sql_schema_primary
                 + [Column("annotations", JSON)],
@@ -399,7 +398,6 @@ class LabelStudioStep(PipelineStep):
                 )
 
             last_sync = sync_datetime_df.loc[0, "last_updated_at"]
-
             filters = Filters.create(
                 conjunction="and",
                 items=[
