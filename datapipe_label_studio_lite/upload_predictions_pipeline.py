@@ -76,7 +76,7 @@ class LabelStudioUploadPrediction(PipelineStep):
             return self._project
         assert self.ls_client.check_connection(), "No connection to LS."
         self._project = (
-            self.project_identifier
+            self.ls_client.get_project(int(self.project_identifier))
             if str(self.project_identifier).isnumeric()
             else get_project_by_title(self.ls_client, str(self.project_identifier))
         )

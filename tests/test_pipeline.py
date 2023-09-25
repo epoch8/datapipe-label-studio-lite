@@ -23,7 +23,7 @@ from datapipe.store.database import TableStoreDB
 from datapipe.compute import build_compute, run_steps
 
 from datapipe_label_studio_lite.upload_tasks_pipeline import LabelStudioUploadTasks
-from datapipe_label_studio_lite.prediction_pipeline import LabelStudioUploadPrediction
+from datapipe_label_studio_lite.upload_predictions_pipeline import LabelStudioUploadPrediction
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, is_service_up
 
