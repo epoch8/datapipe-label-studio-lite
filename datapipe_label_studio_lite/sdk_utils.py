@@ -41,15 +41,11 @@ def login_and_get_token(ls_url: str, email: str, password: str) -> str:
         raise ValueError("Login failed.")
 
 
-def get_project_by_title(
-    ls: label_studio_sdk.Client, title: str
-) -> Optional[label_studio_sdk.Project]:
+def get_project_by_title(ls: label_studio_sdk.Client, title: str) -> Optional[label_studio_sdk.Project]:
     projects: List[label_studio_sdk.Project] = ls.get_projects()
     titles = [project.get_params()["title"] for project in projects]
     if title in titles:
-        assert (
-            titles.count(title) == 1
-        ), f'There are 2 or more projects with title="{title}"'
+        assert titles.count(title) == 1, f'There are 2 or more projects with title="{title}"'
         return projects[titles.index(title)]
     return None
 
