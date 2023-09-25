@@ -45,6 +45,7 @@ class LabelStudioStep(PipelineStep):
     dbconn: Union[DBConn, str]
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
+    secondary_input: Optional[str] = None
 
     name: Optional[str] = None
 
@@ -214,6 +215,10 @@ class LabelStudioStep(PipelineStep):
             ),
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
+        if self.secondary_input is not None:
+            self.secondary_dt = catalog.get_datatable(ds, self.secondary_input)
+        else:
+            self.secondary_dt = None
 
         def upload_tasks(df: pd.DataFrame, idx: IndexDF) -> pd.DataFrame:
             """
@@ -292,6 +297,24 @@ class LabelStudioStep(PipelineStep):
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             if len(df_to_be_uploaded) > 0:
+
+                if self.secondary_dt is not None:
+                    df_secondary_data = self.secondary_dt.get_data(idx=df_idx)
+                    secondary_columns = list(
+                        set(df_secondary_data.columns) - set(df.columns)
+                    )
+                    df = pd.merge(
+                        left=df,
+                        right=df_secondary_data,
+                        on=self.primary_keys,
+                    )
+                    # convert all boolean columns to string because of serialization issues for np.bool_ type
+                    for col in df.columns:
+                        if df[col].dtype == np.bool_:
+                            df[col] = df[col].astype(str)
+                else:
+                    secondary_columns = []
+
                 data_to_be_added = [
                     {
                         "data": {
@@ -299,7 +322,7 @@ class LabelStudioStep(PipelineStep):
                                 primary_key: self._convert_data_if_need(
                                     df_to_be_uploaded.loc[idx, primary_key]
                                 )
-                                for primary_key in self.primary_keys + self.data_columns
+                                for primary_key in self.primary_keys + self.data_columns + secondary_columns
                             }
                         }
                     }
