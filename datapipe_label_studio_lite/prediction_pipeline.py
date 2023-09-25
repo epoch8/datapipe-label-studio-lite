@@ -1,3 +1,4 @@
+from datapipe.executor import ExecutorConfig
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import pandas as pd
 from typing import Union, List, Optional
@@ -44,6 +45,7 @@ class LabelStudioUploadPrediction(PipelineStep):
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__separator: str = "__"
+    executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
         if isinstance(self.project_identifier, str):
@@ -171,6 +173,7 @@ class LabelStudioUploadPrediction(PipelineStep):
                     inputs=[self.input__item__has__prediction, self.input__label_studio_project_task],
                     outputs=[self.output__label_studio_project_prediction],
                     chunk_size=self.chunk_size,
+                    executor_config=self.executor_config
                 ),
             ]
         )
