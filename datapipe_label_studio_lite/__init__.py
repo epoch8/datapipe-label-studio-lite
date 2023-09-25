@@ -1,4 +1,1 @@
 __version__ = "0.4.0"
-
-from datapipe_label_studio_lite.upload_tasks_pipeline import LabelStudioUploadTasks
-from datapipe_label_studio_lite.prediction_pipeline import LabelStudioUploadPrediction

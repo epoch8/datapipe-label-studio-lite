@@ -173,7 +173,7 @@ class LabelStudioUploadPrediction(PipelineStep):
                     inputs=[self.input__item__has__prediction, self.input__label_studio_project_task],
                     outputs=[self.output__label_studio_project_prediction],
                     chunk_size=self.chunk_size,
-                    executor_config=self.executor_config
+                    executor_config=self.executor_config,
                 ),
             ]
         )

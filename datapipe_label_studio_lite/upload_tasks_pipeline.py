@@ -421,7 +421,7 @@ class LabelStudioUploadTasks(PipelineStep):
                     inputs=[self.input__item],
                     outputs=[self.output__label_studio_project_task],
                     chunk_size=self.chunk_size,
-                    executor_config=self.executor_config
+                    executor_config=self.executor_config,
                 ),
                 DatatableTransform(
                     labels=self.labels,
