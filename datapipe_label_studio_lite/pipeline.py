@@ -229,8 +229,8 @@ class LabelStudioStep(PipelineStep):
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             idx = data_to_index(idx, self.primary_keys)
+            df_idx = data_to_index(df, self.primary_keys)
             if self.delete_unannotated_tasks_only_on_update:
-                df_idx = data_to_index(df, self.primary_keys)
                 df_existing_tasks = input_uploader_dt.get_data(idx=idx)
                 df_existing_tasks_with_output = pd.merge(
                     df_existing_tasks, output_dt.get_data(idx=idx), how="left"
