@@ -303,18 +303,17 @@ class LabelStudioStep(PipelineStep):
                     secondary_columns = list(
                         set(df_secondary_data.columns) - set(df.columns)
                     )
-                    df = pd.merge(
-                        left=df,
+                    df_to_be_uploaded = pd.merge(
+                        left=df_to_be_uploaded,
                         right=df_secondary_data,
                         on=self.primary_keys,
                     )
                     # convert all boolean columns to string because of serialization issues for np.bool_ type
-                    for col in df.columns:
-                        if df[col].dtype == np.bool_:
-                            df[col] = df[col].astype(str)
+                    for col in df_to_be_uploaded.columns:
+                        if df_to_be_uploaded[col].dtype == np.bool_:
+                            df_to_be_uploaded[col] = df_to_be_uploaded[col].astype(str)
                 else:
                     secondary_columns = []
-
                 data_to_be_added = [
                     {
                         "data": {
