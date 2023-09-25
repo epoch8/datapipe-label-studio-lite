@@ -29,7 +29,7 @@ from datapipe_label_studio_lite.sdk_utils import get_project_by_title
 
 
 @dataclass
-class LabelStudioUploadPrediction(PipelineStep):
+class LabelStudioUploadPredictions(PipelineStep):
     input__item__has__prediction: str
     # prediction имеет такой вид: {"result": [...], "score": 0.}
     input__label_studio_project_task: str

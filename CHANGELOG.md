@@ -2,7 +2,7 @@
 * Added Python3.11 support
 * Major refactoring:
 - `LabelStudioStep` -> `LabelStudioUploadTasks`
-- Added `LabelStudioUploadPrediction`
+- Added `LabelStudioUploadPredictions`
 - Для помощи с миграцией обращаться к @bobokvsky
 * Added Storages support (S3 or GCS) for `LabelStudioUploadTasks`
 
