@@ -1,5 +1,12 @@
+# 0.4.0
+* Added Python3.11 support
+* Major refactoring:
+- `LabelStudioStep` -> `LabelStudioUploadTasks`
+- Added `LabelStudioUploadPrediction`
+- Для помощи с миграцией обращаться к @bobokvsky
+* Added Storages support (S3 or GCS) for `LabelStudioUploadTasks`
+
 # 0.3.0
-* Added `Python 3.11` support
 * Update datapipe-core version (0.13.0-alpha.4)
 * `LabelStudioStep` now supports deleting tasks in `upload` table. In `output` table older annotations are not deleted.
 * Added argument `delete_unannotated_tasks_only_on_update` in `LabelStudioStep`.

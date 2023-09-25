@@ -22,7 +22,7 @@ label-studio-sdk = ">=0.0.32"
 flake8 = "*"
 black = "*"
 
-datapipe-core = {version=">=0.13.2, <0.14", extras=["sqlite"]}
+datapipe-core = {version=">=0.13.4, <0.14", extras=["sqlite"]}
 
 pytest = "*"
 pytest-xdist = "*"

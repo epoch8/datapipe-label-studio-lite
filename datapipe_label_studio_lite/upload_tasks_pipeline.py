@@ -2,7 +2,7 @@ import logging
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Union, List, Optional
+from typing import Any, Dict, Union, List, Optional, cast
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
@@ -116,12 +116,12 @@ class LabelStudioUploadTasks(PipelineStep):
             return self._project
         assert self.ls_client.check_connection(), "No connection to LS."
         self._project = (
-            self.project_identifier
+            self.ls_client.get_project(self.project_identifier)
             if str(self.project_identifier).isnumeric()
             else get_project_by_title(self.ls_client, str(self.project_identifier))
         )
         if self._project is None:
-            self._project: label_studio_sdk.Project = self.ls_client.start_project(
+            self._project = self.ls_client.start_project(
                 title=self.project_identifier,
                 description=self.project_description_at_create,
                 label_config=self.project_label_config_at_create,
@@ -153,7 +153,7 @@ class LabelStudioUploadTasks(PipelineStep):
         connected_buckets = [
             f"{storage['type']}://{storage.get('bucket', None)}" for storage in storages_response.json()
         ]
-        for storage in self.storages:
+        for storage in cast(List[Union[GCSBucket, S3Bucket]], self.storages):
             if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
                 if isinstance(storage, S3Bucket):
                     result = self._project.connect_s3_import_storage(
