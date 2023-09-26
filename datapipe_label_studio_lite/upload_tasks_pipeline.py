@@ -405,8 +405,10 @@ class LabelStudioUploadTasks(PipelineStep):
                             for primary_key in primary_keys
                         },
                         "annotations": [_cleanup(task["annotations"]) for task in tasks_page],
+                        "task_id": [task["id"] for task in tasks_page]
                     }
-                )
+                ).sort_values(by="task_id", ascending=False)
+                output_df = output_df.drop_duplicates(subset=primary_keys).drop(columns=["task_id"])
                 dt__output__label_studio_project_annotation.store_chunk(output_df)
 
             if len(updated_ats) > 0:
