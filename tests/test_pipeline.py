@@ -314,6 +314,7 @@ def test_ls_moderation(
         output_dts=[ds.get_table("ls_input_data_raw")],
     )
     run_steps(ds, steps)
+    assert len(ds.get_table("ls_task").get_data()) == TASKS_COUNT
     assert len(ds.get_table("ls_output").get_data()) == TASKS_COUNT
 
     # Проверяем проверку на заливку уже размеченных данных
@@ -439,7 +440,9 @@ def test_ls_when_data_is_changed(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT
 
+    assert len(ds.get_table("ls_task").get_data()) == TASKS_COUNT
     df_ls = ds.get_table("ls_output").get_data()
+    assert len(df_ls) == TASKS_COUNT
     if include_predictions:
         df_prediction = ds.get_table("ls_prediction").get_data()
         assert len(df_prediction) == len(df_ls)
@@ -514,7 +517,9 @@ def test_ls_when_task_is_missing_from_ls(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT
 
+    assert len(ds.get_table("ls_task").get_data()) == TASKS_COUNT
     df_ls = ds.get_table("ls_output").get_data()
+    assert len(df_ls) == TASKS_COUNT
     if include_predictions:
         df_prediction = ds.get_table("ls_prediction").get_data()
         assert len(df_prediction) == len(df_ls)
@@ -587,6 +592,7 @@ def test_ls_when_some_data_is_deleted(
     df_ls_upload = ds.get_table("ls_task").get_data()
     assert len(df_ls_upload) == TASKS_COUNT - 5
 
+    assert len(ds.get_table("ls_task").get_data()) == TASKS_COUNT - 5
     df_ls = ds.get_table("ls_output").get_data()
     assert len(df_ls) == TASKS_COUNT - 5
     if include_predictions:
@@ -694,6 +700,7 @@ def test_ls_specific_updating_scenary(
     df_ls_upload = ds.get_table("ls_task").get_data()
     assert len(df_ls_upload) == 10
 
+    assert len(ds.get_table("ls_task").get_data()) == 10
     df_ls = ds.get_table("ls_output").get_data()
     assert len(df_ls) == 10
     if include_predictions:
