@@ -287,12 +287,7 @@ class CasesLabelStudio:
             project.delete_project(project.id)
 
 
-@parametrize_with_cases(
-    "ds, catalog, steps, project_title, include_preannotations, include_prepredictions, "
-    "include_predictions, label_studio_session, delete_unannotated_tasks_only_on_update",
-    cases=CasesLabelStudio,
-)
-def test_ls_moderation(
+def ls_moderation_base(
     ds: DataStore,
     catalog: Catalog,
     steps: List[DatatableTransformStep],
@@ -378,6 +373,37 @@ def test_ls_moderation(
             #         assert df_annotation.loc[idx, 'predictions'][0]['result'][0]['value']['choices'][0] in (
             #             ["Class1", "Class2"]
             #         )
+
+    assert len(ds.get_table("ls_output").get_data()) == 10
+
+
+@parametrize_with_cases(
+    "ds, catalog, steps, project_title, include_preannotations, include_prepredictions, "
+    "include_predictions, label_studio_session, delete_unannotated_tasks_only_on_update",
+    cases=CasesLabelStudio,
+)
+def test_ls_moderation(
+    ds: DataStore,
+    catalog: Catalog,
+    steps: List[DatatableTransformStep],
+    project_title: str,
+    include_preannotations: bool,
+    include_prepredictions: bool,
+    include_predictions: bool,
+    label_studio_session: label_studio_sdk.Client,
+    delete_unannotated_tasks_only_on_update: bool,
+):
+    ls_moderation_base(
+        ds=ds,
+        catalog=catalog,
+        steps=steps,
+        project_title=project_title,
+        include_preannotations=include_preannotations,
+        include_prepredictions=include_prepredictions,
+        include_predictions=include_predictions,
+        label_studio_session=label_studio_session,
+        delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
+    )
 
 
 @parametrize_with_cases(
@@ -589,10 +615,9 @@ def test_ls_when_some_data_is_deleted(
     tasks = project.get_tasks()
     assert len(tasks) == TASKS_COUNT - 5
 
-    df_ls_upload = ds.get_table("ls_task").get_data()
-    assert len(df_ls_upload) == TASKS_COUNT - 5
+    df_ls_task = ds.get_table("ls_task").get_data()
+    assert len(df_ls_task) == TASKS_COUNT - 5
 
-    assert len(ds.get_table("ls_task").get_data()) == TASKS_COUNT - 5
     df_ls = ds.get_table("ls_output").get_data()
     assert len(df_ls) == TASKS_COUNT - 5
     if include_predictions:
@@ -697,10 +722,9 @@ def test_ls_specific_updating_scenary(
     tasks_after = project.get_tasks()
     assert len(tasks_after) == 10
 
-    df_ls_upload = ds.get_table("ls_task").get_data()
-    assert len(df_ls_upload) == 10
+    df_ls_task = ds.get_table("ls_task").get_data()
+    assert len(df_ls_task) == 10
 
-    assert len(ds.get_table("ls_task").get_data()) == 10
     df_ls = ds.get_table("ls_output").get_data()
     assert len(df_ls) == 10
     if include_predictions:
@@ -708,7 +732,7 @@ def test_ls_specific_updating_scenary(
         assert len(df_prediction) == 10
         df_prediction = pd.merge(df_ls, df_prediction)
 
-    df_ls = pd.merge(df_ls_upload, df_ls)
+    df_ls = pd.merge(df_ls_task, df_ls)
     for idx in df_ls.index:
         if df_ls.loc[idx, "id"] in [f"task_{i}" for i in [0, 1, 2, 6, 7, 8]]:
             # Разметка при обновлении задачи не должна уйти, если delete_unannotated_tasks_only_on_update=False
@@ -730,3 +754,46 @@ def test_ls_specific_updating_scenary(
         # Предсказания не должны уйти
         # if include_predictions:
         #     assert len(df_ls.loc[idx, 'predictions']) == include_prepredictions + include_predictions
+
+
+@parametrize_with_cases(
+    "ds, catalog, steps, project_title, include_preannotations, include_prepredictions, "
+    "include_predictions, label_studio_session, delete_unannotated_tasks_only_on_update",
+    cases=CasesLabelStudio,
+)
+def test_ls_moderate_then_delete_task(
+    ds: DataStore,
+    catalog: Catalog,
+    steps: List[DatatableTransformStep],
+    project_title: str,
+    include_preannotations: bool,
+    include_prepredictions: bool,
+    include_predictions: bool,
+    label_studio_session: label_studio_sdk.Client,
+    delete_unannotated_tasks_only_on_update: bool,
+):
+    ls_moderation_base(
+        ds=ds,
+        catalog=catalog,
+        steps=steps,
+        project_title=project_title,
+        include_preannotations=include_preannotations,
+        include_prepredictions=include_prepredictions,
+        include_predictions=include_predictions,
+        label_studio_session=label_studio_session,
+        delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
+    )
+    ds.get_table("ls_input_data_raw").delete_by_idx(idx=pd.DataFrame({"id": [f"task_{i}" for i in range(5)]}))
+    run_steps(ds, steps)
+    project = get_project_by_title(label_studio_session, project_title)
+    tasks_after = project.get_tasks()
+    if delete_unannotated_tasks_only_on_update:
+        assert len(ds.get_table("ls_output").get_data()) == 10
+        assert len(tasks_after) == 10
+        assert len(ds.get_table("ls_task").get_data()) == 10
+        assert len(ds.get_table("ls_output").get_data()) == 10
+    else:
+        assert len(ds.get_table("ls_output").get_data()) == 5
+        assert len(tasks_after) == 5
+        assert len(ds.get_table("ls_task").get_data()) == 5
+        assert len(ds.get_table("ls_output").get_data()) == 5

@@ -322,7 +322,7 @@ class LabelStudioUploadTasks(PipelineStep):
                     idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
                 )
 
-            if df.empty:
+            if df.empty and not self.delete_unannotated_tasks_only_on_update:
                 return pd.DataFrame(columns=primary_keys + ["task_id"])
 
             if len(df_to_be_uploaded) > 0:
