@@ -247,7 +247,7 @@ class CasesLabelStudio:
                     inputs=["ls_input_data_raw"],
                     outputs=["ls_input_data__has__prediction"],
                 ),
-                LabelStudioUploadPrediction(
+                LabelStudioUploadPredictions(
                     input__item__has__prediction="ls_input_data__has__prediction",
                     input__label_studio_project_task="ls_task",
                     output__label_studio_project_prediction="ls_prediction",
