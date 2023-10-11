@@ -288,7 +288,7 @@ class LabelStudioStep(PipelineStep):
                     )
                 )
 
-            if df.empty:
+            if df.empty and not self.delete_unannotated_tasks_only_on_update:
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             if len(df_to_be_uploaded) > 0:
