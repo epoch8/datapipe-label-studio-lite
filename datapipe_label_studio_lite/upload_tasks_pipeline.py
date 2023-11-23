@@ -2,7 +2,7 @@ import logging
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Union, List, Optional, cast
+from typing import Any, Callable, Dict, Union, List, Optional, cast
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
@@ -38,7 +38,7 @@ from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
 logger = logging.getLogger("dataipipe_label_studio_lite")
 
 
-def convert_data_if_need(self, value: Any):
+def convert_data_if_need(value: Any):
     if isinstance(value, np.int64):
         return int(value)
     return value
@@ -79,8 +79,9 @@ def delete_task_from_project(project: label_studio_sdk.Project, task_id: Any) ->
 def upload_tasks_to_label_studio(
     df: pd.DataFrame,
     idx: IndexDF,
-    project: label_studio_sdk.Project,
+    get_project: Callable[[], label_studio_sdk.Project],
     primary_keys: List[str],
+    columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
     dt__output__label_studio_project_task: DataTable,
     dt__output__label_studio_project_annotation: DataTable,
@@ -91,13 +92,17 @@ def upload_tasks_to_label_studio(
     if df.empty and idx.empty:
         return pd.DataFrame(columns=primary_keys + ["task_id"])
 
+    project = get_project()
     idx = data_to_index(idx, primary_keys)
     if delete_unannotated_tasks_only_on_update:
         df_idx = data_to_index(df, primary_keys)
         df_existing_tasks = dt__output__label_studio_project_task.get_data(idx=idx)
         df_existing_tasks_with_output = pd.merge(
-            df_existing_tasks, dt__output__label_studio_project_annotation.get_data(idx=idx), how="left"
-        )
+            df_existing_tasks,
+            dt__output__label_studio_project_annotation.get_data(idx=idx),
+            how="left",
+            on=primary_keys,
+        ).drop(columns=columns)
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
@@ -105,16 +110,12 @@ def upload_tasks_to_label_studio(
             )
             df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
             df_existing_tasks_to_be_deleted = pd.merge(
-                df_existing_tasks_with_output[~have_annotations],
-                deleted_idx,
-                how="outer",
+                df_existing_tasks_with_output[~have_annotations], deleted_idx, how="outer", on=primary_keys
             )
         else:
             df_existing_tasks_to_be_stayed = pd.DataFrame(columns=primary_keys + ["task_id"])
             df_existing_tasks_to_be_deleted = pd.merge(
-                pd.DataFrame(columns=primary_keys + ["task_id"]),
-                deleted_idx,
-                how="outer",
+                pd.DataFrame(columns=primary_keys + ["task_id"]), deleted_idx, how="outer", on=primary_keys
             )
         df_to_be_uploaded = pd.concat(
             [
@@ -151,7 +152,14 @@ def upload_tasks_to_label_studio(
 
     if len(df_to_be_uploaded) > 0:
         data_to_be_added = [
-            {"data": {**{column: convert_data_if_need(df_to_be_uploaded.loc[idx, column]) for column in primary_keys}}}
+            {
+                "data": {
+                    **{
+                        column: convert_data_if_need(df_to_be_uploaded.loc[idx, column])
+                        for column in primary_keys + columns
+                    }
+                }
+            }
             for idx in df_to_be_uploaded.index
         ]
         tasks_added = project.import_tasks(tasks=data_to_be_added)
@@ -179,7 +187,8 @@ def get_annotations_from_label_studio(
     Записывает в табличку задачи из сервера LS вместе с разметкой согласно
     дате последней синхронизации
     """
-    project: label_studio_sdk.Project = kwargs["project"]
+    get_project: Callable[[], label_studio_sdk.Project] = kwargs["get_project"]
+    project = get_project()
     primary_keys: List[str] = kwargs["primary_keys"]
 
     # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
@@ -240,6 +249,7 @@ class LabelStudioUploadTasks(PipelineStep):
     api_key: str
     project_identifier: Union[str, int]  # project_title or id
     primary_keys: List[str]
+    columns: List[str]
 
     chunk_size: int = 100
     project_label_config_at_create: str = ""
@@ -273,8 +283,7 @@ class LabelStudioUploadTasks(PipelineStep):
             )
         return self._ls_client
 
-    @property
-    def project(self) -> label_studio_sdk.Project:
+    def get_project(self) -> label_studio_sdk.Project:
         """
         При первом использовании ищет проект в LS по индентификатору,
         если его нет -- автоматически создаётся проект с нуля.
@@ -343,7 +352,7 @@ class LabelStudioUploadTasks(PipelineStep):
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
         dt__input_item = ds.get_table(self.input__item)
         assert isinstance(dt__input_item.table_store, TableStoreDB)
-        check_columns_are_in_table(ds, self.input__item, self.primary_keys)
+        check_columns_are_in_table(ds, self.input__item, self.primary_keys + self.columns)
         dt__output__label_studio_project_task = ds.get_or_create_table(
             self.output__label_studio_project_task,
             TableStoreDB(
@@ -380,8 +389,8 @@ class LabelStudioUploadTasks(PipelineStep):
                 name=self.output__label_studio_project_annotation,
                 data_sql_schema=[
                     column
-                    for column in dt__input_item.primary_schema
-                    if column.name in dt__input_item.table_store.primary_keys
+                    for column in dt__input_item.table_store.get_schema()
+                    if column.name in dt__input_item.table_store.primary_keys + self.columns
                 ]
                 + [Column("annotations", JSON)],
                 create_table=self.create_table,
@@ -401,8 +410,9 @@ class LabelStudioUploadTasks(PipelineStep):
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
                     kwargs=dict(
-                        project=self.project,
+                        get_project=self.get_project,
                         primary_keys=self.primary_keys,
+                        columns=self.columns,
                         delete_unannotated_tasks_only_on_update=self.delete_unannotated_tasks_only_on_update,
                         dt__output__label_studio_project_task=dt__output__label_studio_project_task,
                         dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
@@ -414,7 +424,7 @@ class LabelStudioUploadTasks(PipelineStep):
                     inputs=[],
                     outputs=[self.output__label_studio_sync_table, self.output__label_studio_project_annotation],
                     check_for_changes=False,
-                    kwargs=dict(project=self.project, primary_keys=self.primary_keys),
+                    kwargs=dict(get_project=self.get_project, primary_keys=self.primary_keys),
                 ),
             ]
         )
@@ -427,18 +437,21 @@ def upload_tasks_to_label_studio_projects(
     idx: IndexDF,
     ls_client: label_studio_sdk.Client,
     primary_keys: List[str],
+    columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
     dt__output__label_studio_project_task: DataTable,
     dt__output__label_studio_project_annotation: DataTable,
 ) -> pd.DataFrame:
-    project_identifiers = set(
-        df__item["project_identifier"]
-    ).union(set(df__label_studio_project["project_identifier"])).union(set(idx["project_identifier"]))
+    project_identifiers = (
+        set(df__item["project_identifier"])
+        .union(set(df__label_studio_project["project_identifier"]))
+        .union(set(idx["project_identifier"]))
+    )
     dfs = []
     for project_identifier in project_identifiers:
         df_by_project_identifier = df__item[df__item["project_identifier"] == project_identifier]
         idx_by_project_identifier = idx[idx["project_identifier"] == project_identifier]
-        if project_identifier not in df__label_studio_project["project_identifier"]:
+        if project_identifier not in set(df__label_studio_project["project_identifier"]):
             logger.info(f"Project {project_identifier} not found in input__label_studio_project. Skipping")
             continue
         project_id = df__label_studio_project[
@@ -448,8 +461,9 @@ def upload_tasks_to_label_studio_projects(
         df__res = upload_tasks_to_label_studio(
             df=df_by_project_identifier,
             idx=idx_by_project_identifier,
-            project=ls_client.get_project(project_id),
+            get_project=lambda: ls_client.get_project(project_id),
             primary_keys=primary_keys,
+            columns=columns,
             delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
             dt__output__label_studio_project_task=dt__output__label_studio_project_task,
             dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
@@ -477,7 +491,7 @@ def get_annotations_from_label_studio_projects(
     ):
         logger.info(f"Getting annotations from {project_identifier=} ({project_id=})")
         params_kwargs = kwargs.copy()
-        params_kwargs["project"] = ls_client.get_project(project_id)
+        params_kwargs["get_project"] = lambda: ls_client.get_project(project_id)
         get_annotations_from_label_studio(
             ds, input_dts=[], output_dts=output_dts, run_config=run_config, kwargs=params_kwargs
         )
@@ -494,6 +508,7 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
     ls_url: str
     api_key: str
     primary_keys: List[str]
+    columns: List[str]
 
     chunk_size: int = 100
     project_label_config_at_create: str = ""
@@ -536,7 +551,11 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
             TableStoreDB(
                 dbconn=ds.meta_dbconn,
                 name=self.output__label_studio_project_task,
-                data_sql_schema=[column for column in dt__input_item.table_store.get_primary_schema()]
+                data_sql_schema=[
+                    column
+                    for column in dt__input_item.table_store.get_primary_schema()
+                    if column.name in self.primary_keys
+                ]
                 + [Column("task_id", Integer)],
                 create_table=self.create_table,
             ),
@@ -564,7 +583,11 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
             TableStoreDB(
                 dbconn=ds.meta_dbconn,
                 name=self.output__label_studio_project_annotation,
-                data_sql_schema=[column for column in dt__input_item.primary_schema if column.name in self.primary_keys]
+                data_sql_schema=[
+                    column
+                    for column in dt__input_item.table_store.get_schema()
+                    if column.name in self.primary_keys + self.columns
+                ]
                 + [Column("annotations", JSON)],
                 create_table=self.create_table,
             ),
@@ -576,7 +599,7 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
         pipeline = Pipeline(
             [
                 BatchTransform(
-                    labels=[("stage", "upload_data_to_ls"), *(self.labels or [])],
+                    labels=self.labels,
                     func=upload_tasks_to_label_studio_projects,
                     inputs=[self.input__item, self.input__label_studio_project],
                     outputs=[self.output__label_studio_project_task],
@@ -585,10 +608,12 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
                     kwargs=dict(
                         ls_client=self.ls_client,
                         primary_keys=self.primary_keys,
+                        columns=self.columns,
                         delete_unannotated_tasks_only_on_update=self.delete_unannotated_tasks_only_on_update,
                         dt__output__label_studio_project_task=dt__output__label_studio_project_task,
                         dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
                     ),
+                    transform_keys=self.primary_keys,
                 ),
                 DatatableTransform(
                     labels=self.labels,

@@ -2,7 +2,7 @@ from datapipe.datatable import DataTable
 from datapipe.executor import ExecutorConfig
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import pandas as pd
-from typing import Union, List, Optional
+from typing import Callable, Union, List, Optional
 from dataclasses import dataclass
 from datapipe.store.database import TableStoreDB
 import requests
@@ -33,7 +33,7 @@ def upload_prediction_to_label_studio(
     df__item__has__prediction: pd.DataFrame,
     df__label_studio_project_task: pd.DataFrame,
     idx: IndexDF,
-    project: label_studio_sdk.Project,
+    get_project: Callable[[], label_studio_sdk.Project],
     primary_keys: List[str],
     dt__output__label_studio_project_prediction: DataTable,
     model_version__separator: str,
@@ -45,6 +45,7 @@ def upload_prediction_to_label_studio(
     if (df__item__has__prediction.empty and df__label_studio_project_task.empty) and idx.empty:
         return pd.DataFrame(columns=primary_keys + ["task_id", "prediction"])
 
+    project = get_project()
     idx = data_to_index(idx, primary_keys)
     df_existing_prediction_to_be_deleted = dt__output__label_studio_project_prediction.get_data(idx=idx)
     if len(df_existing_prediction_to_be_deleted) > 0:
@@ -127,8 +128,7 @@ class LabelStudioUploadPredictions(PipelineStep):
             )
         return self._ls_client
 
-    @property
-    def project(self) -> label_studio_sdk.Project:
+    def get_project(self) -> label_studio_sdk.Project:
         """
         При первом использовании ищет проект в LS по индентификатору,
         если его нет -- автоматически создаётся проект с нуля.
@@ -161,7 +161,7 @@ class LabelStudioUploadPredictions(PipelineStep):
                         data_sql_schema=[
                             column
                             for column in dt__input__has__prediction.primary_schema
-                            if column in self.primary_keys
+                            if column.name in self.primary_keys
                         ]
                         + [
                             Column("task_id", Integer),
@@ -179,14 +179,14 @@ class LabelStudioUploadPredictions(PipelineStep):
         pipeline = Pipeline(
             [
                 BatchTransform(
-                    labels=[("stage", "upload_predictions_to_ls"), *(self.labels or [])],
+                    labels=self.labels,
                     func=upload_prediction_to_label_studio,
                     inputs=[self.input__item__has__prediction, self.input__label_studio_project_task],
                     outputs=[self.output__label_studio_project_prediction],
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
                     kwargs=dict(
-                        project=self.project,
+                        get_project=self.get_project,
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
                         model_version__separator=self.model_version__separator,
@@ -207,16 +207,15 @@ def upload_prediction_to_label_studio_projects(
     dt__output__label_studio_project_prediction: DataTable,
     model_version__separator: str,
 ) -> pd.DataFrame:
-    project_identifiers = set(
-        df__label_studio_project["project_identifier"]
-    ).union(set(df__item__has__prediction["project_identifier"])).union(
-        set(df__label_studio_project_task["project_identifier"])
-    ).union(set(idx["project_identifier"]))
+    project_identifiers = (
+        set(df__label_studio_project["project_identifier"])
+        .union(set(df__item__has__prediction["project_identifier"]))
+        .union(set(df__label_studio_project_task["project_identifier"]))
+        .union(set(idx["project_identifier"]))
+    )
     dfs = []
-    for project_identifier, project_id in zip(
-        df__label_studio_project["project_identifier"], df__label_studio_project["project_id"]
-    ):
-        if project_identifier not in df__label_studio_project["project_identifier"]:
+    for project_identifier in project_identifiers:
+        if project_identifier not in set(df__label_studio_project["project_identifier"]):
             logger.info(f"Project {project_identifier} not found in input__label_studio_project. Skipping")
             continue
         project_id = df__label_studio_project[
@@ -233,7 +232,7 @@ def upload_prediction_to_label_studio_projects(
             df__item__has__prediction=df__item__has__prediction_by_project_identifier,
             df__label_studio_project_task=df__label_studio_project_task_by_project_identifier,
             idx=idx_by_project_identifier,
-            project=ls_client.get_project(project_id),
+            get_project=lambda: ls_client.get_project(project_id),
             primary_keys=primary_keys,
             dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
             model_version__separator=model_version__separator,
@@ -243,6 +242,7 @@ def upload_prediction_to_label_studio_projects(
         dfs_res = pd.DataFrame(columns=primary_keys + ["task_id", "prediction_id", "model_version", "prediction"])
     else:
         dfs_res = pd.concat(dfs, ignore_index=True)
+    print(f"{dfs_res=}")
     return dfs_res
 
 
@@ -265,9 +265,6 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
     executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
-        if isinstance(self.project_identifier, str):
-            assert len(self.project_identifier) <= 50
-
         # lazy initialization
         self._ls_client: Optional[label_studio_sdk.Client] = None
         self._project: Optional[label_studio_sdk.Project] = None
@@ -282,24 +279,6 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                 credentials=self.api_key if isinstance(self.api_key, tuple) else None,
             )
         return self._ls_client
-
-    @property
-    def project(self) -> label_studio_sdk.Project:
-        """
-        При первом использовании ищет проект в LS по индентификатору,
-        если его нет -- автоматически создаётся проект с нуля.
-        """
-        if self._project is not None:
-            return self._project
-        assert self.ls_client.check_connection(), "No connection to LS."
-        self._project = (
-            self.ls_client.get_project(int(self.project_identifier))
-            if str(self.project_identifier).isnumeric()
-            else get_project_by_title(self.ls_client, str(self.project_identifier))
-        )
-        if self._project is None:
-            raise ValueError(f"Project with {self.project_identifier=} not found")
-        return self._project
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
         assert "project_identifier" in self.primary_keys
@@ -320,7 +299,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         data_sql_schema=[
                             column
                             for column in dt__input__has__prediction.primary_schema
-                            if column in self.primary_keys
+                            if column.name in self.primary_keys
                         ]
                         + [
                             Column("task_id", Integer),
@@ -354,6 +333,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
                         model_version__separator=self.model_version__separator,
                     ),
+                    transform_keys=self.primary_keys,
                 ),
             ]
         )

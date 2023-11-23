@@ -1,7 +1,7 @@
 import logging
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import pandas as pd
-from typing import Any, Dict, Union, List, Optional, cast
+from typing import Union, List, Optional, cast
 from dataclasses import dataclass
 from datapipe.store.database import TableStoreDB
 
@@ -22,6 +22,7 @@ from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
+from datapipe.compute import Table
 
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
@@ -62,7 +63,6 @@ class CreateLabelStudioProjects(PipelineStep):
 
     ls_url: str
     api_key: str
-    primary_keys: List[str]
 
     storages: Optional[List[Union[GCSBucket, S3Bucket]]] = None
     create_table: bool = False
@@ -88,8 +88,8 @@ class CreateLabelStudioProjects(PipelineStep):
     def create_project(
         self,
         project_identifier: Union[str, int],  # project_title or id
-        project_label_config_at_create: Dict[str, Any],
-        project_description_at_create: Dict[str, Any],
+        project_label_config_at_create: str,
+        project_description_at_create: str,
     ) -> label_studio_sdk.Project:
         """
         При первом использовании ищет проект в LS по индентификатору,
@@ -164,25 +164,27 @@ class CreateLabelStudioProjects(PipelineStep):
         )
         catalog.add_datatable(
             self.output__label_studio_project,
-            ds.get_or_create_table(
-                self.output__label_studio_project,
-                TableStoreDB(
-                    dbconn=ds.meta_dbconn,
-                    name=self.output__label_studio_project,
-                    data_sql_schema=[
-                        column
-                        for column in dt__input__label_studio_project_setting.table_store.get_primary_schema()
-                        if column.name in ["project_identifier"]
-                    ]
-                    + [
-                        Column("project_id", Integer, primary_key=True),
-                    ],
-                    create_table=self.create_table,
-                ),
+            Table(
+                ds.get_or_create_table(
+                    self.output__label_studio_project,
+                    TableStoreDB(
+                        dbconn=ds.meta_dbconn,
+                        name=self.output__label_studio_project,
+                        data_sql_schema=[
+                            column
+                            for column in dt__input__label_studio_project_setting.table_store.get_primary_schema()
+                            if column.name in ["project_identifier"]
+                        ]
+                        + [
+                            Column("project_id", Integer, primary_key=True),
+                        ],
+                        create_table=self.create_table,
+                    ),
+                )
             ),
         )
 
-        def create_projects(df__input__label_studio_project_setting) -> pd.DataFrame:
+        def create_projects(df__input__label_studio_project_setting: pd.DataFrame) -> pd.DataFrame:
             """
             Добавляет в LS новые задачи с заданными ключами.
             """
@@ -197,16 +199,16 @@ class CreateLabelStudioProjects(PipelineStep):
                 project_identifier, project_label_config_at_create, project_description_at_create
             )
             df__input__label_studio_project_setting["project_id"] = project.id
-            return df__input__label_studio_project_setting
+            return df__input__label_studio_project_setting[["project_identifier", "project_id"]]
 
         pipeline = Pipeline(
             [
                 BatchTransform(
-                    labels=self.labels,
                     func=create_projects,
                     inputs=[self.input__label_studio_project_setting],
                     outputs=[self.output__label_studio_project],
                     chunk_size=1,
+                    labels=self.labels,
                     executor_config=self.executor_config,
                 ),
             ]
