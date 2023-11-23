@@ -431,7 +431,9 @@ def upload_tasks_to_label_studio_projects(
     dt__output__label_studio_project_task: DataTable,
     dt__output__label_studio_project_annotation: DataTable,
 ) -> pd.DataFrame:
-    project_identifiers = set(df__item["project_identifier"]).union(set(idx["project_identifier"]))
+    project_identifiers = set(
+        df__item["project_identifier"]
+    ).union(set(df__label_studio_project["project_identifier"])).union(set(idx["project_identifier"]))
     dfs = []
     for project_identifier in project_identifiers:
         df_by_project_identifier = df__item[df__item["project_identifier"] == project_identifier]
@@ -468,10 +470,10 @@ def get_annotations_from_label_studio_projects(
     kwargs: Dict[str, Any],
 ) -> None:
     ls_client: label_studio_sdk.Client = kwargs["ls_client"]
-    dt__label_studio_project_task: DataTable = input_dts[0]
-    df__label_studio_project_task = dt__label_studio_project_task.get_data()
+    dt__label_studio_project: DataTable = input_dts[0]
+    df__label_studio_project = dt__label_studio_project.get_data()
     for project_identifier, project_id in zip(
-        df__label_studio_project_task["project_identifier"], df__label_studio_project_task["project_id"]
+        df__label_studio_project["project_identifier"], df__label_studio_project["project_id"]
     ):
         logger.info(f"Getting annotations from {project_identifier=} ({project_id=})")
         params_kwargs = kwargs.copy()
@@ -591,7 +593,7 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
                 DatatableTransform(
                     labels=self.labels,
                     func=get_annotations_from_label_studio_projects,
-                    inputs=[self.output__label_studio_project_task],
+                    inputs=[self.input__label_studio_project],
                     outputs=[self.output__label_studio_sync_table, self.output__label_studio_project_annotation],
                     check_for_changes=False,
                     kwargs=dict(ls_client=self.ls_client, primary_keys=self.primary_keys),

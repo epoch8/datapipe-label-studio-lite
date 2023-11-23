@@ -26,6 +26,7 @@ from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
+from datapipe_label_studio_lite.upload_tasks_pipeline import logger
 
 
 def upload_prediction_to_label_studio(
@@ -186,6 +187,169 @@ class LabelStudioUploadPredictions(PipelineStep):
                     executor_config=self.executor_config,
                     kwargs=dict(
                         project=self.project,
+                        primary_keys=self.primary_keys,
+                        dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+                        model_version__separator=self.model_version__separator,
+                    ),
+                ),
+            ]
+        )
+        return build_compute(ds, catalog, pipeline)
+
+
+def upload_prediction_to_label_studio_projects(
+    df__label_studio_project: pd.DataFrame,
+    df__item__has__prediction: pd.DataFrame,
+    df__label_studio_project_task: pd.DataFrame,
+    idx: IndexDF,
+    ls_client: label_studio_sdk.Client,
+    primary_keys: List[str],
+    dt__output__label_studio_project_prediction: DataTable,
+    model_version__separator: str,
+) -> pd.DataFrame:
+    project_identifiers = set(
+        df__label_studio_project["project_identifier"]
+    ).union(set(df__item__has__prediction["project_identifier"])).union(
+        set(df__label_studio_project_task["project_identifier"])
+    ).union(set(idx["project_identifier"]))
+    dfs = []
+    for project_identifier, project_id in zip(
+        df__label_studio_project["project_identifier"], df__label_studio_project["project_id"]
+    ):
+        if project_identifier not in df__label_studio_project["project_identifier"]:
+            logger.info(f"Project {project_identifier} not found in input__label_studio_project. Skipping")
+            continue
+        project_id = df__label_studio_project[
+            df__label_studio_project["project_identifier"] == project_identifier
+        ].iloc[0]["project_id"]
+        df__item__has__prediction_by_project_identifier = df__item__has__prediction[
+            df__item__has__prediction["project_identifier"] == project_identifier
+        ]
+        df__label_studio_project_task_by_project_identifier = df__label_studio_project_task[
+            df__label_studio_project_task["project_identifier"] == project_identifier
+        ]
+        idx_by_project_identifier = idx[idx["project_identifier"] == project_identifier]
+        df__res = upload_prediction_to_label_studio(
+            df__item__has__prediction=df__item__has__prediction_by_project_identifier,
+            df__label_studio_project_task=df__label_studio_project_task_by_project_identifier,
+            idx=idx_by_project_identifier,
+            project=ls_client.get_project(project_id),
+            primary_keys=primary_keys,
+            dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+            model_version__separator=model_version__separator,
+        )
+        dfs.append(df__res)
+    if len(dfs) == 0:
+        dfs_res = pd.DataFrame(columns=primary_keys + ["task_id", "prediction_id", "model_version", "prediction"])
+    else:
+        dfs_res = pd.concat(dfs, ignore_index=True)
+    return dfs_res
+
+
+@dataclass
+class LabelStudioUploadPredictionsToProjects(PipelineStep):
+    input__item__has__prediction: str
+    # prediction имеет такой вид: {"result": [...], "score": 0.}
+    input__label_studio_project: str
+    input__label_studio_project_task: str
+    output__label_studio_project_prediction: str
+
+    ls_url: str
+    api_key: str
+    primary_keys: List[str]
+
+    chunk_size: int = 100
+    create_table: bool = False
+    labels: Optional[Labels] = None
+    model_version__separator: str = "__"
+    executor_config: Optional[ExecutorConfig] = None
+
+    def __post_init__(self):
+        if isinstance(self.project_identifier, str):
+            assert len(self.project_identifier) <= 50
+
+        # lazy initialization
+        self._ls_client: Optional[label_studio_sdk.Client] = None
+        self._project: Optional[label_studio_sdk.Project] = None
+        self.labels = self.labels or []
+
+    @property
+    def ls_client(self) -> label_studio_sdk.Client:
+        if self._ls_client is None:
+            self._ls_client = label_studio_sdk.Client(
+                url=self.ls_url,
+                api_key=self.api_key if isinstance(self.api_key, str) else None,
+                credentials=self.api_key if isinstance(self.api_key, tuple) else None,
+            )
+        return self._ls_client
+
+    @property
+    def project(self) -> label_studio_sdk.Project:
+        """
+        При первом использовании ищет проект в LS по индентификатору,
+        если его нет -- автоматически создаётся проект с нуля.
+        """
+        if self._project is not None:
+            return self._project
+        assert self.ls_client.check_connection(), "No connection to LS."
+        self._project = (
+            self.ls_client.get_project(int(self.project_identifier))
+            if str(self.project_identifier).isnumeric()
+            else get_project_by_title(self.ls_client, str(self.project_identifier))
+        )
+        if self._project is None:
+            raise ValueError(f"Project with {self.project_identifier=} not found")
+        return self._project
+
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+        assert "project_identifier" in self.primary_keys
+        dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
+        dt__input__label_studio_project = ds.get_table(self.input__label_studio_project)
+        assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
+        check_columns_are_in_table(ds, self.input__item__has__prediction, self.primary_keys + ["prediction"])
+        check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
+        check_columns_are_in_table(ds, self.input__label_studio_project, ["project_identifier", "project_id"])
+        catalog.add_datatable(
+            self.output__label_studio_project_prediction,
+            Table(
+                ds.get_or_create_table(
+                    self.output__label_studio_project_prediction,
+                    TableStoreDB(
+                        dbconn=ds.meta_dbconn,
+                        name=self.output__label_studio_project_prediction,
+                        data_sql_schema=[
+                            column
+                            for column in dt__input__has__prediction.primary_schema
+                            if column in self.primary_keys
+                        ]
+                        + [
+                            Column("task_id", Integer),
+                            Column("prediction_id", Integer),
+                            Column("model_version", String),
+                            Column("prediction", JSON),
+                        ],
+                        create_table=self.create_table,
+                    ),
+                )
+            ),
+        )
+        dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)
+
+        pipeline = Pipeline(
+            [
+                BatchTransform(
+                    labels=[("stage", "upload_predictions_to_ls"), *(self.labels or [])],
+                    func=upload_prediction_to_label_studio_projects,
+                    inputs=[
+                        self.input__label_studio_project,
+                        self.input__item__has__prediction,
+                        self.input__label_studio_project_task,
+                    ],
+                    outputs=[self.output__label_studio_project_prediction],
+                    chunk_size=self.chunk_size,
+                    executor_config=self.executor_config,
+                    kwargs=dict(
+                        ls_client=self.ls_client,
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
                         model_version__separator=self.model_version__separator,
