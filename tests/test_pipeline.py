@@ -235,7 +235,7 @@ class CasesLabelStudio:
                 api_key=api_key,
                 project_identifier=project_title,
                 project_label_config_at_create=PROJECT_LABEL_CONFIG_TEST,
-                columns=["id", "text"],
+                primary_keys=["id", "text"],
                 create_table=True,
                 delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
             ),
@@ -254,7 +254,7 @@ class CasesLabelStudio:
                     ls_url=ls_url,
                     api_key=api_key,
                     project_identifier=project_title,
-                    columns=["id"],
+                    primary_keys=["id"],
                     create_table=True,
                 ),
             ]

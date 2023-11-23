@@ -1,3 +1,4 @@
+from datapipe.datatable import DataTable
 from datapipe.executor import ExecutorConfig
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 import pandas as pd
@@ -23,9 +24,69 @@ from datapipe.compute import (
 )
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
-from datapipe.store.database import DBConn
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
+
+
+def upload_prediction_to_label_studio(
+    df__item__has__prediction: pd.DataFrame,
+    df__label_studio_project_task: pd.DataFrame,
+    idx: IndexDF,
+    project: label_studio_sdk.Project,
+    primary_keys: List[str],
+    dt__output__label_studio_project_prediction: DataTable,
+    model_version__separator: str,
+) -> pd.DataFrame:
+    """
+    Добавляет в LS предсказания.
+    """
+    df = pd.merge(df__item__has__prediction, df__label_studio_project_task, on=primary_keys)
+    if (df__item__has__prediction.empty and df__label_studio_project_task.empty) and idx.empty:
+        return pd.DataFrame(columns=primary_keys + ["task_id", "prediction"])
+
+    idx = data_to_index(idx, primary_keys)
+    df_existing_prediction_to_be_deleted = dt__output__label_studio_project_prediction.get_data(idx=idx)
+    if len(df_existing_prediction_to_be_deleted) > 0:
+        for prediction in df_existing_prediction_to_be_deleted["prediction"]:
+            try:
+                project.make_request(method="DELETE", url=f"api/predictions/{prediction['id']}/")
+            except requests.exceptions.HTTPError:
+                continue
+        dt__output__label_studio_project_prediction.delete_by_idx(
+            idx=data_to_index(df_existing_prediction_to_be_deleted, primary_keys)
+        )
+
+    if df.empty:
+        return pd.DataFrame(columns=primary_keys + ["task_id"])
+
+    df["model_version"] = df.apply(
+        lambda row: model_version__separator.join([str(row[column]) for column in primary_keys]),
+        axis=1,
+    )
+    # Не подходит из-за https://github.com/HumanSignal/label-studio/issues/4819
+    # uploaded_predictions = self.project.create_predictions(
+    #     [
+    #         dict(
+    #             task=row["task_id"],
+    #             result=row["prediction"].get('result', []),
+    #             model_version=row['model_version'],
+    #             score=row["prediction"].get('score', 1.0)
+    #         )
+    #         for _, row in df.iterrows()
+    #     ]
+    # )
+    uploaded_predictions = [
+        project.create_prediction(
+            task_id=row["task_id"],
+            result=row["prediction"].get("result", []),
+            model_version=row["model_version"],
+            score=row["prediction"].get("score", 1.0),
+        )
+        for _, row in df.iterrows()
+    ]
+    df["prediction_id"] = [prediction["id"] for prediction in uploaded_predictions]
+    df["prediction"] = [prediction for prediction in uploaded_predictions]
+    return df[primary_keys + ["task_id", "prediction_id", "model_version", "prediction"]]
 
 
 @dataclass
@@ -38,10 +99,9 @@ class LabelStudioUploadPredictions(PipelineStep):
     ls_url: str
     api_key: str
     project_identifier: Union[str, int]  # project_title or id
-    columns: List[str]
+    primary_keys: List[str]
 
     chunk_size: int = 100
-    dbconn: Optional[DBConn] = None
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__separator: str = "__"
@@ -87,9 +147,8 @@ class LabelStudioUploadPredictions(PipelineStep):
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
-        primary_keys = dt__input__has__prediction.table_store.primary_keys
-        check_columns_are_in_table(ds, self.input__item__has__prediction, primary_keys + ["prediction"])
-        check_columns_are_in_table(ds, self.input__label_studio_project_task, primary_keys + ["task_id"])
+        check_columns_are_in_table(ds, self.input__item__has__prediction, self.primary_keys + ["prediction"])
+        check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
         catalog.add_datatable(
             self.output__label_studio_project_prediction,
             Table(
@@ -98,7 +157,11 @@ class LabelStudioUploadPredictions(PipelineStep):
                     TableStoreDB(
                         dbconn=ds.meta_dbconn,
                         name=self.output__label_studio_project_prediction,
-                        data_sql_schema=[column for column in dt__input__has__prediction.primary_schema]
+                        data_sql_schema=[
+                            column
+                            for column in dt__input__has__prediction.primary_schema
+                            if column in self.primary_keys
+                        ]
                         + [
                             Column("task_id", Integer),
                             Column("prediction_id", Integer),
@@ -112,59 +175,6 @@ class LabelStudioUploadPredictions(PipelineStep):
         )
         dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)
 
-        def upload_prediction_to_label_studio(
-            df__item__has__prediction: pd.DataFrame, df__label_studio_project_task: pd.DataFrame, idx: IndexDF
-        ) -> pd.DataFrame:
-            """
-            Добавляет в LS предсказания.
-            """
-            df = pd.merge(df__item__has__prediction, df__label_studio_project_task, on=primary_keys)
-            if (df__item__has__prediction.empty and df__label_studio_project_task.empty) and idx.empty:
-                return pd.DataFrame(columns=primary_keys + ["task_id", "prediction"])
-
-            idx = data_to_index(idx, primary_keys)
-            df_existing_prediction_to_be_deleted = dt__output__label_studio_project_prediction.get_data(idx=idx)
-            if len(df_existing_prediction_to_be_deleted) > 0:
-                for prediction in df_existing_prediction_to_be_deleted["prediction"]:
-                    try:
-                        self.project.make_request(method="DELETE", url=f"api/predictions/{prediction['id']}/")
-                    except requests.exceptions.HTTPError:
-                        continue
-                dt__output__label_studio_project_prediction.delete_by_idx(
-                    idx=data_to_index(df_existing_prediction_to_be_deleted, primary_keys)
-                )
-
-            if df.empty:
-                return pd.DataFrame(columns=primary_keys + ["task_id"])
-
-            df["model_version"] = df.apply(
-                lambda row: self.model_version__separator.join([str(row[column]) for column in primary_keys]), axis=1
-            )
-            # Не подходит из-за https://github.com/HumanSignal/label-studio/issues/4819
-            # uploaded_predictions = self.project.create_predictions(
-            #     [
-            #         dict(
-            #             task=row["task_id"],
-            #             result=row["prediction"].get('result', []),
-            #             model_version=row['model_version'],
-            #             score=row["prediction"].get('score', 1.0)
-            #         )
-            #         for _, row in df.iterrows()
-            #     ]
-            # )
-            uploaded_predictions = [
-                self.project.create_prediction(
-                    task_id=row["task_id"],
-                    result=row["prediction"].get("result", []),
-                    model_version=row["model_version"],
-                    score=row["prediction"].get("score", 1.0),
-                )
-                for _, row in df.iterrows()
-            ]
-            df["prediction_id"] = [prediction["id"] for prediction in uploaded_predictions]
-            df["prediction"] = [prediction for prediction in uploaded_predictions]
-            return df[primary_keys + ["task_id", "prediction_id", "model_version", "prediction"]]
-
         pipeline = Pipeline(
             [
                 BatchTransform(
@@ -174,6 +184,12 @@ class LabelStudioUploadPredictions(PipelineStep):
                     outputs=[self.output__label_studio_project_prediction],
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
+                    kwargs=dict(
+                        project=self.project,
+                        primary_keys=self.primary_keys,
+                        dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+                        model_version__separator=self.model_version__separator,
+                    ),
                 ),
             ]
         )
