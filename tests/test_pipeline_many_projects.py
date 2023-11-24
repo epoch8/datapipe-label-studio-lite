@@ -279,7 +279,6 @@ class CasesLabelStudio:
                 output__label_studio_sync_table="ls_sync_datetime",
                 ls_url=ls_url,
                 api_key=api_key,
-                project_label_config_at_create=PROJECT_LABEL_CONFIG_TEST,
                 primary_keys=["project_identifier", "id"],
                 columns=["text"],
                 create_table=True,
