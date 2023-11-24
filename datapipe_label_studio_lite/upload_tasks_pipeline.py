@@ -511,9 +511,6 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
     columns: List[str]
 
     chunk_size: int = 100
-    project_label_config_at_create: str = ""
-    project_description_at_create: str = ""
-    storages: Optional[List[Union[GCSBucket, S3Bucket]]] = None
     create_table: bool = False
     delete_unannotated_tasks_only_on_update: bool = False
     labels: Optional[Labels] = None
