@@ -525,7 +525,6 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
         self._project: Optional[label_studio_sdk.Project] = None
 
         self.labels = self.labels or []
-        self.storages = self.storages or []
 
     @property
     def ls_client(self) -> label_studio_sdk.Client:
