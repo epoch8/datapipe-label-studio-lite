@@ -121,11 +121,12 @@ def upload_tasks_to_label_studio(
         df__output__label_studio_project_annotation = (
             pd.DataFrame.from_records(
                 {
-                    **{primary_key: [task["data"][primary_key] for task in tasks] for primary_key in primary_keys},
+                    **{column: [task["data"][column] for task in tasks] for column in primary_keys + columns},
                     "annotations": [_cleanup(task["annotations"]) for task in tasks],
                     "task_id": [task["id"] for task in tasks],
                 }
             )
+            .sort_values(by="task_id", ascending=False)
             .drop_duplicates(subset=primary_keys)
             .drop(columns=["task_id"])
         )
