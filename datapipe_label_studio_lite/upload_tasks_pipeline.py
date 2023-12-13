@@ -31,7 +31,7 @@ from datapipe.step.datatable_transform import DatatableTransform, DatatableTrans
 from datapipe.datatable import DataTable
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
+from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT, Column as ColumnLS
 from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
 
 
@@ -76,6 +76,14 @@ def delete_task_from_project(project: label_studio_sdk.Project, task_id: Any) ->
         response.raise_for_status()
 
 
+# created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
+def _cleanup(values):
+    for ann in values:
+        if "created_ago" in ann:
+            del ann["created_ago"]
+    return values
+
+
 def upload_tasks_to_label_studio(
     df: pd.DataFrame,
     idx: IndexDF,
@@ -84,7 +92,7 @@ def upload_tasks_to_label_studio(
     columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
     dt__output__label_studio_project_task: DataTable,
-    dt__output__label_studio_project_annotation: DataTable,
+    # dt__output__label_studio_project_annotation: DataTable,
 ) -> pd.DataFrame:
     """
     Добавляет в LS новые задачи с заданными ключами.
@@ -97,9 +105,33 @@ def upload_tasks_to_label_studio(
     if delete_unannotated_tasks_only_on_update:
         df_idx = data_to_index(df, primary_keys)
         df_existing_tasks = dt__output__label_studio_project_task.get_data(idx=idx)
+        filters = Filters.create(
+            conjunction="or",
+            items=[
+                Filters.item(
+                    name=ColumnLS.id,
+                    operator=Operator.EQUAL,
+                    column_type=Type.Number,
+                    value=Filters.value(value=task_id),
+                )
+                for task_id in df_existing_tasks["task_id"]
+            ],
+        )
+        tasks = project.get_tasks(filters=filters)
+        df__output__label_studio_project_annotation = (
+            pd.DataFrame.from_records(
+                {
+                    **{primary_key: [task["data"][primary_key] for task in tasks] for primary_key in primary_keys},
+                    "annotations": [_cleanup(task["annotations"]) for task in tasks],
+                    "task_id": [task["id"] for task in tasks],
+                }
+            )
+            .drop_duplicates(subset=primary_keys)
+            .drop(columns=["task_id"])
+        )
         df_existing_tasks_with_output = pd.merge(
             df_existing_tasks,
-            dt__output__label_studio_project_annotation.get_data(idx=idx),
+            df__output__label_studio_project_annotation,
             how="left",
             on=primary_keys,
         ).drop(columns=columns)
@@ -190,13 +222,6 @@ def get_annotations_from_label_studio(
     get_project: Callable[[], label_studio_sdk.Project] = kwargs["get_project"]
     project = get_project()
     primary_keys: List[str] = kwargs["primary_keys"]
-
-    # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
-    def _cleanup(values):
-        for ann in values:
-            if "created_ago" in ann:
-                del ann["created_ago"]
-        return values
 
     (dt__output__label_studio_sync_table, dt__output__label_studio_project_annotation) = output_dts
 
@@ -415,7 +440,7 @@ class LabelStudioUploadTasks(PipelineStep):
                         columns=self.columns,
                         delete_unannotated_tasks_only_on_update=self.delete_unannotated_tasks_only_on_update,
                         dt__output__label_studio_project_task=dt__output__label_studio_project_task,
-                        dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
+                        # dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
                     ),
                 ),
                 DatatableTransform(
