@@ -31,7 +31,7 @@ from datapipe.step.datatable_transform import DatatableTransform, DatatableTrans
 from datapipe.datatable import DataTable
 import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
+from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT, Column as ColumnLS
 from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
 
 
@@ -76,6 +76,14 @@ def delete_task_from_project(project: label_studio_sdk.Project, task_id: Any) ->
         response.raise_for_status()
 
 
+# created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
+def _cleanup(values):
+    for ann in values:
+        if "created_ago" in ann:
+            del ann["created_ago"]
+    return values
+
+
 def upload_tasks_to_label_studio(
     df: pd.DataFrame,
     idx: IndexDF,
@@ -97,12 +105,41 @@ def upload_tasks_to_label_studio(
     if delete_unannotated_tasks_only_on_update:
         df_idx = data_to_index(df, primary_keys)
         df_existing_tasks = dt__output__label_studio_project_task.get_data(idx=idx)
-        df_existing_tasks_with_output = pd.merge(
-            df_existing_tasks,
-            dt__output__label_studio_project_annotation.get_data(idx=idx),
-            how="left",
-            on=primary_keys,
-        ).drop(columns=columns)
+        filters = Filters.create(
+            conjunction="or",
+            items=[
+                Filters.item(
+                    name=ColumnLS.id,
+                    operator=Operator.EQUAL,
+                    column_type=Type.Number,
+                    value=Filters.value(task_id),
+                )
+                for task_id in df_existing_tasks["task_id"]
+            ],
+        )
+        tasks = project.get_tasks(filters=filters)
+        df__output__label_studio_project_annotation = (
+            pd.DataFrame.from_records(
+                {
+                    **{column: [task["data"][column] for task in tasks] for column in primary_keys + columns},
+                    "annotations": [_cleanup(task["annotations"]) for task in tasks],
+                    "task_id": [task["id"] for task in tasks],
+                }
+            )
+            .sort_values(by="task_id", ascending=False)
+            .drop_duplicates(subset=primary_keys)
+            .drop(columns=["task_id"])
+        )
+        if len(df__output__label_studio_project_annotation) == 0:
+            df_existing_tasks_with_output = df_existing_tasks.copy()
+            df_existing_tasks_with_output["annotations"] = df_existing_tasks_with_output.apply(lambda row: [], axis=1)
+        else:
+            df_existing_tasks_with_output = pd.merge(
+                df_existing_tasks,
+                df__output__label_studio_project_annotation,
+                how="left",
+                on=primary_keys,
+            ).drop(columns=columns)
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
@@ -144,7 +181,12 @@ def upload_tasks_to_label_studio(
         for task_id in df_existing_tasks_to_be_deleted["task_id"]:
             delete_task_from_project(project, task_id)
         dt__output__label_studio_project_annotation.delete_by_idx(
-            idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
+            idx=data_to_index(
+                dt__output__label_studio_project_annotation.get_data(
+                    idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
+                ),
+                primary_keys,
+            )
         )
 
     if df.empty and not delete_unannotated_tasks_only_on_update:
@@ -190,13 +232,6 @@ def get_annotations_from_label_studio(
     get_project: Callable[[], label_studio_sdk.Project] = kwargs["get_project"]
     project = get_project()
     primary_keys: List[str] = kwargs["primary_keys"]
-
-    # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
-    def _cleanup(values):
-        for ann in values:
-            if "created_ago" in ann:
-                del ann["created_ago"]
-        return values
 
     (dt__output__label_studio_sync_table, dt__output__label_studio_project_annotation) = output_dts
 
