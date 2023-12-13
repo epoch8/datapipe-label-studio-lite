@@ -112,7 +112,7 @@ def upload_tasks_to_label_studio(
                     name=ColumnLS.id,
                     operator=Operator.EQUAL,
                     column_type=Type.Number,
-                    value=Filters.value(value=task_id),
+                    value=Filters.value(task_id),
                 )
                 for task_id in df_existing_tasks["task_id"]
             ],
@@ -129,12 +129,16 @@ def upload_tasks_to_label_studio(
             .drop_duplicates(subset=primary_keys)
             .drop(columns=["task_id"])
         )
-        df_existing_tasks_with_output = pd.merge(
-            df_existing_tasks,
-            df__output__label_studio_project_annotation,
-            how="left",
-            on=primary_keys,
-        ).drop(columns=columns)
+        if len(df__output__label_studio_project_annotation) == 0:
+            df_existing_tasks_with_output = df_existing_tasks.copy()
+            df_existing_tasks_with_output["annotations"] = df_existing_tasks_with_output.apply(lambda row: [], axis=1)
+        else:
+            df_existing_tasks_with_output = pd.merge(
+                df_existing_tasks,
+                df__output__label_studio_project_annotation,
+                how="left",
+                on=primary_keys,
+            ).drop(columns=columns)
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
@@ -180,7 +184,7 @@ def upload_tasks_to_label_studio(
                 dt__output__label_studio_project_annotation.get_data(
                     idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
                 ),
-                primary_keys
+                primary_keys,
             )
         )
 
