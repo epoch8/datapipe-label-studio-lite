@@ -92,7 +92,7 @@ def upload_tasks_to_label_studio(
     columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
     dt__output__label_studio_project_task: DataTable,
-    # dt__output__label_studio_project_annotation: DataTable,
+    dt__output__label_studio_project_annotation: DataTable,
 ) -> pd.DataFrame:
     """
     Добавляет в LS новые задачи с заданными ключами.
@@ -176,7 +176,12 @@ def upload_tasks_to_label_studio(
         for task_id in df_existing_tasks_to_be_deleted["task_id"]:
             delete_task_from_project(project, task_id)
         dt__output__label_studio_project_annotation.delete_by_idx(
-            idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
+            idx=data_to_index(
+                dt__output__label_studio_project_annotation.get_data(
+                    idx=data_to_index(df_existing_tasks_to_be_deleted, primary_keys)
+                ),
+                primary_keys
+            )
         )
 
     if df.empty and not delete_unannotated_tasks_only_on_update:
@@ -440,7 +445,7 @@ class LabelStudioUploadTasks(PipelineStep):
                         columns=self.columns,
                         delete_unannotated_tasks_only_on_update=self.delete_unannotated_tasks_only_on_update,
                         dt__output__label_studio_project_task=dt__output__label_studio_project_task,
-                        # dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
+                        dt__output__label_studio_project_annotation=dt__output__label_studio_project_annotation,
                     ),
                 ),
                 DatatableTransform(
