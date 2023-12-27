@@ -745,3 +745,56 @@ def test_ls_specific_updating_scenary(
         # Предсказания не должны уйти
         # if include_predictions:
         #     assert len(df_ls.loc[idx, 'predictions']) == include_prepredictions + include_predictions
+
+
+@parametrize_with_cases(
+    "ds, catalog, steps, project_title, include_preannotations, include_prepredictions, "
+    "include_predictions, label_studio_session, delete_unannotated_tasks_only_on_update",
+    cases=CasesLabelStudio,
+)
+def test_ls_moderation_with_duplicates_in_ls(
+    ds: DataStore,
+    catalog: Catalog,
+    steps: List[DatatableTransformStep],
+    project_title: str,
+    include_preannotations: bool,
+    include_prepredictions: bool,
+    include_predictions: bool,
+    label_studio_session: label_studio_sdk.Client,
+    delete_unannotated_tasks_only_on_update: bool,
+):
+    # This should be ok (project will be created, but without data)
+    run_steps(ds, steps)
+    run_steps(ds, steps)
+
+    # Загружаем данные для задач в LS во входную таблицу.
+    do_batch_generate(
+        func=gen_data_df,
+        ds=ds,
+        output_dts=[ds.get_table("ls_input_data_raw")],
+    )
+    
+    # Добавляем дубликаты задач напрямую в проект LS.
+    tasks_duplicates_to_add = [
+        {
+            "data": {
+                "id": "task_1",
+                "text": "task_1_new_text"
+            }
+        },
+        {
+            "data": {
+                "id": "task_2",
+                "text": "task_2_new_text"
+            }
+        }
+    ]
+    project = get_project_by_title(label_studio_session, project_title)
+    project.import_tasks(tasks=tasks_duplicates_to_add)
+
+    # Запускаем трансформацию.
+    run_steps(ds, steps)
+    
+    # Проверяем количество задач в LS и данных в выходной таблице трубы.
+    assert len(project.get_tasks()) == TASKS_COUNT + len(tasks_duplicates_to_add)
+    assert len(ds.get_table("ls_output").get_data()) == TASKS_COUNT

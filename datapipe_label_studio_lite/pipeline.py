@@ -383,6 +383,8 @@ class LabelStudioStep(PipelineStep):
                         ],
                     }
                 )
+                # Удаление возможных дубликатов из LabelStudio.
+                output_df = output_df.drop_duplicates(subset=self.primary_keys, keep="last")
                 output_dts[0].store_chunk(output_df)
 
             if len(updated_ats) > 0:
