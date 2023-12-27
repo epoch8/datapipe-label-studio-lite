@@ -1,3 +1,6 @@
+# 0.3.1
+* Add drop_duplicates on fetch data from LabelStudio (get_annotations_from_ls)
+
 # 0.3.0
 
 * Update datapipe-core version (0.13.0-alpha.4)

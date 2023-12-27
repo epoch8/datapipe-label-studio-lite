@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "datapipe-label-studio-lite"
-version = "0.3.0"
+version = "0.3.1"
 description = ""
 authors = [
     "Alexander Kozlov <bobokvsky@epoch8.co>",
