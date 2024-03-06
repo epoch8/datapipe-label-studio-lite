@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "datapipe-label-studio-lite"
-version = "0.3.1"
+version = "0.3.2"
 description = ""
 authors = [
     "Alexander Kozlov <bobokvsky@epoch8.co>",
@@ -11,7 +11,7 @@ exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
 python = ">=3.8, <3.11"
-pandas = "^1.2.0"
+pandas = ">=1.2.0, <3"
 numpy = "^1.21.0"
 SQLAlchemy = "^1.4.25"
 requests = "^2.24.0"
@@ -24,7 +24,7 @@ black = "*"
 
 datapipe-core = {version=">=0.13.0, <0.14", extras=["sqlite"]}
 
-pytest = "*"
+pytest = "^7.4.3"
 pytest-xdist = "*"
 pytest-cases = "^3.6.4"
 

@@ -1,4 +1,9 @@
+# 0.3.2
+
+* Update Pandas dependency (allow 2+ version)
+
 # 0.3.1
+
 * Add drop_duplicates on fetch data from LabelStudio (get_annotations_from_ls)
 
 # 0.3.0
