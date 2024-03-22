@@ -143,7 +143,7 @@ def upload_tasks_to_label_studio(
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
-                lambda ann: not pd.isna(ann) and len(ann) > 0
+                lambda ann: len(ann) > 0 and pd.notna(ann).any()
             )
             df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
             df_existing_tasks_to_be_deleted = pd.merge(
