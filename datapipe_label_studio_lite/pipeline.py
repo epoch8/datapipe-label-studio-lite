@@ -234,7 +234,7 @@ class LabelStudioStep(PipelineStep):
                 if len(df_existing_tasks_with_output) > 0:
                     have_annotations = df_existing_tasks_with_output[
                         "annotations"
-                    ].apply(lambda ann: len(ann) > 0 and pd.notna(ann).any()
+                    ].apply(lambda ann: len(ann) > 0 and pd.notna(ann).any())
                     df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[
                         have_annotations
                     ]
