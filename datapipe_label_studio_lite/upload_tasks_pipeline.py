@@ -143,7 +143,7 @@ def upload_tasks_to_label_studio(
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
-                lambda ann: not pd.isna(ann) and len(ann) > 0
+                lambda ann: len(ann) > 0 and bool(pd.notna(ann).any())
             )
             df_existing_tasks_to_be_stayed = df_existing_tasks_with_output[have_annotations]
             df_existing_tasks_to_be_deleted = pd.merge(
@@ -234,6 +234,7 @@ def get_annotations_from_label_studio(
     primary_keys: List[str] = kwargs["primary_keys"]
 
     (dt__output__label_studio_sync_table, dt__output__label_studio_project_annotation) = output_dts
+    dt__output__label_studio_project_task: DataTable = kwargs["dt__output__label_studio_project_task"]
 
     df__output__label_studio_sync_table = dt__output__label_studio_sync_table.get_data(
         idx=pd.DataFrame({"project_id": [project.id]})
@@ -265,8 +266,10 @@ def get_annotations_from_label_studio(
                 "task_id": [task["id"] for task in tasks_page],
             }
         ).sort_values(by="task_id", ascending=False)
-        output_df = output_df.drop_duplicates(subset=primary_keys).drop(columns=["task_id"])
-        dt__output__label_studio_project_annotation.store_chunk(output_df)
+        df__output__label_studio_project_task = dt__output__label_studio_project_task.get_data(idx=output_df)
+        if len(df__output__label_studio_project_task) > 0:
+            output_df = pd.merge(df__output__label_studio_project_task, output_df).drop(columns=["task_id"])
+            dt__output__label_studio_project_annotation.store_chunk(output_df)
 
     if len(updated_ats) > 0:
         df__output__label_studio_sync_table.loc[0, "last_updated_at"] = max(updated_ats)
@@ -425,7 +428,7 @@ class LabelStudioUploadTasks(PipelineStep):
                 data_sql_schema=[
                     column
                     for column in dt__input_item.table_store.get_schema()
-                    if column.name in dt__input_item.table_store.primary_keys + self.columns
+                    if column.name in dt__input_item.table_store.primary_keys
                 ]
                 + [Column("annotations", JSON)],
                 create_table=self.create_table,
@@ -459,7 +462,11 @@ class LabelStudioUploadTasks(PipelineStep):
                     inputs=[],
                     outputs=[self.output__label_studio_sync_table, self.output__label_studio_project_annotation],
                     check_for_changes=False,
-                    kwargs=dict(get_project=self.get_project, primary_keys=self.primary_keys),
+                    kwargs=dict(
+                        get_project=self.get_project,
+                        primary_keys=self.primary_keys,
+                        dt__output__label_studio_project_task=dt__output__label_studio_project_task,
+                    ),
                 ),
             ]
         )
@@ -652,7 +659,11 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
                     inputs=[self.input__label_studio_project],
                     outputs=[self.output__label_studio_sync_table, self.output__label_studio_project_annotation],
                     check_for_changes=False,
-                    kwargs=dict(ls_client=self.ls_client, primary_keys=self.primary_keys),
+                    kwargs=dict(
+                        ls_client=self.ls_client,
+                        primary_keys=self.primary_keys,
+                        dt__output__label_studio_project_task=dt__output__label_studio_project_task,
+                    ),
                 ),
             ]
         )
