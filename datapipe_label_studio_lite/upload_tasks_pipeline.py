@@ -139,7 +139,7 @@ def upload_tasks_to_label_studio(
                 df__output__label_studio_project_annotation,
                 how="left",
                 on=primary_keys,
-            ).drop(columns=columns)
+            ).drop(columns=[x for x in columns if x not in primary_keys])
         deleted_idx = index_difference(df_idx, idx)
         if len(df_existing_tasks_with_output) > 0:
             have_annotations = df_existing_tasks_with_output["annotations"].apply(
