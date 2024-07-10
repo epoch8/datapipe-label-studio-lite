@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "datapipe-label-studio-lite"
-version = "0.3.2"
+version = "0.3.3"
 description = ""
 authors = [
     "Alexander Kozlov <bobokvsky@epoch8.co>",
@@ -10,7 +10,7 @@ authors = [
 exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <3.11"
+python = ">=3.8, <3.12"
 pandas = ">=1.2.0, <3"
 numpy = "^1.21.0"
 SQLAlchemy = "^1.4.25"

@@ -1,3 +1,6 @@
+# 0.3.3
+* Update python dependency (allow 3.11 python)
+
 # 0.3.2
 
 * Update Pandas dependency (allow 2+ version)
