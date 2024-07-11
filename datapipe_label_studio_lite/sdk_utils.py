@@ -1,5 +1,5 @@
 import requests
-import label_studio_sdk
+import label_studio_sdk._legacy as label_studio_sdk
 from urllib.parse import urljoin
 from typing import Any, Dict, Iterator, List, Optional
 

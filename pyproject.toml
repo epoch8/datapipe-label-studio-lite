@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "datapipe-label-studio-lite"
-version = "0.3.3"
+version = "0.3.4"
 description = ""
 authors = [
     "Alexander Kozlov <bobokvsky@epoch8.co>",
@@ -11,12 +11,9 @@ exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
 python = ">=3.8, <3.12"
-pandas = ">=1.2.0, <3"
-numpy = "^1.21.0"
-SQLAlchemy = "^1.4.25"
-requests = "^2.24.0"
+requests = ">=2.24.0, <3"
 datapipe-core = ">=0.13.0, <0.14"
-label-studio-sdk = "^0.0.16"
+label-studio-sdk = ">=1.0.3, <1.1"
 
 [tool.poetry.dev-dependencies]
 flake8 = "*"

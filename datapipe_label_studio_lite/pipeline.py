@@ -26,7 +26,7 @@ from datapipe.step.batch_transform import BatchTransformStep
 from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.datatable import DataTable
 from datapipe.store.database import DBConn
-import label_studio_sdk
+import label_studio_sdk._legacy as label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
 from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT
 
@@ -103,12 +103,12 @@ class LabelStudioStep(PipelineStep):
         if self._project is not None:
             return self._project
         assert self.ls_client.check_connection(), "No connection to LS."
-        self._project = (
+        _project = (
             self.project_identifier
             if str(self.project_identifier).isnumeric()
             else get_project_by_title(self.ls_client, str(self.project_identifier))
         )
-        if self._project is None:
+        if _project is None:
             self._project = self.ls_client.start_project(
                 title=self.project_identifier,
                 description=self.project_description_at_create,
@@ -134,6 +134,9 @@ class LabelStudioStep(PipelineStep):
                 task_data_password=None,
                 control_weights={},
             )
+        else:
+            assert isinstance(_project, label_studio_sdk.Project)
+            self._project = _project
 
         return self._project
 
