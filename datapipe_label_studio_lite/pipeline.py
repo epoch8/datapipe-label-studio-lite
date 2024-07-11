@@ -135,8 +135,8 @@ class LabelStudioStep(PipelineStep):
                 control_weights={},
             )
         else:
-            if isinstance(_project, label_studio_sdk.Project):
-                self._project =_project
+            assert isinstance(_project, label_studio_sdk.Project)
+            self._project = _project
 
         return self._project
 
