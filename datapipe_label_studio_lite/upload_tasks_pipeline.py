@@ -121,7 +121,7 @@ def upload_tasks_to_label_studio(
         df__output__label_studio_project_annotation = (
             pd.DataFrame.from_records(
                 {
-                    **{column: [task["data"][column] for task in tasks] for column in primary_keys + columns},
+                    **{column: [task["data"].get(column) for task in tasks] for column in primary_keys + columns},
                     "annotations": [_cleanup(task["annotations"]) for task in tasks],
                     "task_id": [task["id"] for task in tasks],
                 }
