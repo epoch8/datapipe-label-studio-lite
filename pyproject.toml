@@ -22,7 +22,7 @@ label-studio-sdk = ">=0.0.34"
 flake8 = "*"
 black = "*"
 
-datapipe-core = {git = "https://github.com/epoch8/datapipe.git", rev = "b5790617b824ed9c9718d3e20ca405fcf124d873", extras = ["gcsfs", "s3fs", "ray"]}
+datapipe-core = {git = "https://github.com/epoch8/datapipe.git", rev = "3dc9de4311abaec2802f114560da492d4b31545c", extras = ["gcsfs", "s3fs", "ray"]}
 
 pytest = "*"
 pytest-xdist = "*"
