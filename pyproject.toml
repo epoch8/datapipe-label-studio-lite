@@ -10,7 +10,7 @@ authors = [
 exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <3.12"
+python = ">=3.9, <3.13"
 pandas = ">=1.2.0"
 numpy = ">=1.21.0"
 SQLAlchemy = ">=1.4.25"
