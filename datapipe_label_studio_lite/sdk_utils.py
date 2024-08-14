@@ -1,7 +1,8 @@
-import requests
-import label_studio_sdk
-from urllib.parse import urljoin
 from typing import Any, Dict, Iterator, List, Optional
+from urllib.parse import urljoin
+
+import label_studio_sdk
+import requests
 
 
 def sign_up(ls_url: str, email: str, password: str) -> Optional[str]:

@@ -1,32 +1,27 @@
-from datapipe.datatable import DataTable
-from datapipe.executor import ExecutorConfig
-from datapipe_label_studio_lite.utils import check_columns_are_in_table
-import pandas as pd
-from typing import Callable, Union, List, Optional
 from dataclasses import dataclass
-from datapipe.store.database import TableStoreDB
+from typing import Callable, List, Optional, Union
+
+import label_studio_sdk
+import pandas as pd
 import requests
-
-from sqlalchemy import Integer, Column, JSON, String
-
-from datapipe.types import (
-    IndexDF,
-    Labels,
-    data_to_index,
-)
 from datapipe.compute import (
+    Catalog,
+    ComputeStep,
+    DataStore,
     Pipeline,
     PipelineStep,
-    DataStore,
     Table,
-    Catalog,
     build_compute,
 )
+from datapipe.datatable import DataTable
+from datapipe.executor import ExecutorConfig
 from datapipe.step.batch_transform import BatchTransform
-from datapipe.step.datatable_transform import DatatableTransformStep
-import label_studio_sdk
+from datapipe.store.database import TableStoreDB
+from datapipe.types import IndexDF, Labels, data_to_index
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
 from datapipe_label_studio_lite.upload_tasks_pipeline import logger
+from datapipe_label_studio_lite.utils import check_columns_are_in_table
+from sqlalchemy import JSON, Column, Integer, String
 
 
 def upload_prediction_to_label_studio(
@@ -145,7 +140,7 @@ class LabelStudioUploadPredictions(PipelineStep):
             raise ValueError(f"Project with {self.project_identifier=} not found")
         return self._project
 
-    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
         check_columns_are_in_table(ds, self.input__item__has__prediction, self.primary_keys + ["prediction"])
@@ -171,7 +166,7 @@ class LabelStudioUploadPredictions(PipelineStep):
                         ],
                         create_table=self.create_table,
                     ),
-                )
+                ).table_store
             ),
         )
         dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)
@@ -280,7 +275,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
             )
         return self._ls_client
 
-    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         assert "project_identifier" in self.primary_keys
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         dt__input__label_studio_project = ds.get_table(self.input__label_studio_project)
@@ -309,7 +304,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         ],
                         create_table=self.create_table,
                     ),
-                )
+                ).table_store
             ),
         )
         dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)

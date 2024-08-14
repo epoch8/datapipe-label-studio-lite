@@ -1,4 +1,5 @@
 from typing import List
+
 from datapipe.datatable import DataStore
 from datapipe.store.database import TableStoreDB
 

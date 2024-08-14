@@ -1,32 +1,30 @@
+import string
+import time
+from functools import partial, update_wrapper
 from typing import List
 
-import pytest
-from pytest_cases import parametrize_with_cases, parametrize
-
-import time
-import string
-from functools import partial, update_wrapper
-import pandas as pd
+import label_studio_sdk
 import numpy as np
-
-from sqlalchemy.sql.schema import Column
-from sqlalchemy.sql.sqltypes import String, JSON
-from pkg_resources import parse_version
-
-from datapipe.compute import Catalog, Pipeline, Table
+import pandas as pd
+import pytest
+from datapipe.compute import Catalog, Pipeline, Table, build_compute, run_steps
+from datapipe.datatable import DataStore
+from datapipe.step.batch_generate import BatchGenerate, do_batch_generate
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
-from datapipe.step.batch_generate import BatchGenerate, do_batch_generate
-from datapipe.datatable import DataStore
 from datapipe.store.database import TableStoreDB
-from datapipe.compute import build_compute, run_steps
-
 from datapipe_label_studio_lite.create_projects_step import CreateLabelStudioProjects
-from datapipe_label_studio_lite.upload_tasks_pipeline import LabelStudioUploadTasksToProjects
-from datapipe_label_studio_lite.upload_predictions_pipeline import LabelStudioUploadPredictionsToProjects
-import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, is_service_up
-
+from datapipe_label_studio_lite.upload_predictions_pipeline import (
+    LabelStudioUploadPredictionsToProjects,
+)
+from datapipe_label_studio_lite.upload_tasks_pipeline import (
+    LabelStudioUploadTasksToProjects,
+)
+from pkg_resources import parse_version
+from pytest_cases import parametrize, parametrize_with_cases
+from sqlalchemy.sql.schema import Column
+from sqlalchemy.sql.sqltypes import JSON, String
 
 PROJECT_LABEL_CONFIG_TEST = """<View>
   <Text name="text" value="$text"/>

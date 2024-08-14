@@ -1,29 +1,25 @@
 import logging
-from datapipe_label_studio_lite.utils import check_columns_are_in_table
-import pandas as pd
-from typing import Union, List, Optional, cast
 from dataclasses import dataclass
-from datapipe.store.database import TableStoreDB
+from typing import List, Optional, Union, cast
 
-from sqlalchemy import Integer, Column
-from datapipe.executor import ExecutorConfig
-
-from datapipe.types import (
-    Labels,
-)
+import label_studio_sdk
+import pandas as pd
 from datapipe.compute import (
+    Catalog,
+    ComputeStep,
+    DataStore,
     Pipeline,
     PipelineStep,
-    DataStore,
-    Catalog,
+    Table,
     build_compute,
 )
+from datapipe.executor import ExecutorConfig
 from datapipe.step.batch_transform import BatchTransform
-from datapipe.step.datatable_transform import DatatableTransformStep
-import label_studio_sdk
+from datapipe.store.database import TableStoreDB
+from datapipe.types import Labels
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
-from datapipe.compute import Table
-
+from datapipe_label_studio_lite.utils import check_columns_are_in_table
+from sqlalchemy import Column, Integer
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 
@@ -154,7 +150,7 @@ class CreateLabelStudioProjects(PipelineStep):
                 logger.info(f"Adding storage {storage_name=} to project: {result}")
         return project
 
-    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         dt__input__label_studio_project_setting = ds.get_table(self.input__label_studio_project_setting)
         assert isinstance(dt__input__label_studio_project_setting.table_store, TableStoreDB)
         check_columns_are_in_table(
@@ -180,7 +176,7 @@ class CreateLabelStudioProjects(PipelineStep):
                         ],
                         create_table=self.create_table,
                     ),
-                )
+                ).table_store
             ),
         )
 

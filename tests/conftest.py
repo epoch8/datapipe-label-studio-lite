@@ -1,13 +1,12 @@
+import os
 import tempfile
 from pathlib import Path
-import pytest
-import os
 
 import pandas as pd
-from sqlalchemy import create_engine
-
+import pytest
 from datapipe.store.database import DBConn
-from datapipe_label_studio_lite.sdk_utils import sign_up, login_and_get_token
+from datapipe_label_studio_lite.sdk_utils import login_and_get_token, sign_up
+from sqlalchemy import create_engine
 
 
 @pytest.fixture

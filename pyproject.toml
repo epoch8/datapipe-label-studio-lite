@@ -15,8 +15,8 @@ pandas = ">=1.2.0"
 numpy = ">=1.21.0"
 SQLAlchemy = ">=1.4.25"
 requests = ">=2.24.0"
-datapipe-core = ">=0.13.0, <0.14"
-label-studio-sdk = ">=0.0.32"
+datapipe-core = ">=0.14.0, <0.15"
+label-studio-sdk = ">=0.0.34"
 
 [tool.poetry.dev-dependencies]
 flake8 = "*"

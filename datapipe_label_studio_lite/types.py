@@ -1,7 +1,6 @@
 import logging
-from typing import Union, List, Optional
 from dataclasses import dataclass
-
+from typing import List, Optional, Union
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 

@@ -1,16 +1,26 @@
 import logging
-from datapipe_label_studio_lite.utils import check_columns_are_in_table
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable, List, Optional, Union, cast
+
+import label_studio_sdk
 import numpy as np
 import pandas as pd
-from typing import Any, Callable, Dict, Union, List, Optional, cast
-from datetime import datetime, timezone
-from dataclasses import dataclass
-from datapipe.run_config import RunConfig
-from datapipe.store.database import TableStoreDB
-
-from sqlalchemy import Integer, Column, JSON, DateTime
+from datapipe.compute import (
+    Catalog,
+    ComputeStep,
+    DataStore,
+    Pipeline,
+    PipelineStep,
+    Table,
+    build_compute,
+)
+from datapipe.datatable import DataTable
 from datapipe.executor import ExecutorConfig
-
+from datapipe.run_config import RunConfig
+from datapipe.step.batch_transform import BatchTransform
+from datapipe.step.datatable_transform import DatatableTransform
+from datapipe.store.database import TableStoreDB
 from datapipe.types import (
     IndexDF,
     Labels,
@@ -18,22 +28,13 @@ from datapipe.types import (
     index_difference,
     index_to_data,
 )
-from datapipe.compute import (
-    Pipeline,
-    PipelineStep,
-    DataStore,
-    Table,
-    Catalog,
-    build_compute,
-)
-from datapipe.step.batch_transform import BatchTransform
-from datapipe.step.datatable_transform import DatatableTransform, DatatableTransformStep
-from datapipe.datatable import DataTable
-import label_studio_sdk
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from label_studio_sdk.data_manager import Filters, Operator, Type, DATETIME_FORMAT, Column as ColumnLS
 from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
-
+from datapipe_label_studio_lite.utils import check_columns_are_in_table
+from label_studio_sdk.data_manager import DATETIME_FORMAT
+from label_studio_sdk.data_manager import Column as ColumnLS
+from label_studio_sdk.data_manager import Filters, Operator, Type
+from sqlalchemy import JSON, Column, DateTime, Integer
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 
@@ -222,8 +223,8 @@ def get_annotations_from_label_studio(
     ds: DataStore,
     input_dts: List[DataTable],
     output_dts: List[DataTable],
-    run_config: RunConfig,
-    kwargs: Dict[str, Any],
+    run_config: Optional[RunConfig] = None,
+    **kwargs,
 ):
     """
     Записывает в табличку задачи из сервера LS вместе с разметкой согласно
@@ -237,7 +238,7 @@ def get_annotations_from_label_studio(
     dt__output__label_studio_project_task: DataTable = kwargs["dt__output__label_studio_project_task"]
 
     df__output__label_studio_sync_table = dt__output__label_studio_sync_table.get_data(
-        idx=pd.DataFrame({"project_id": [project.id]})
+        idx=cast(IndexDF, pd.DataFrame({"project_id": [project.id]}))
     )
 
     if df__output__label_studio_sync_table.empty:
@@ -266,7 +267,9 @@ def get_annotations_from_label_studio(
                 "task_id": [task["id"] for task in tasks_page],
             }
         ).sort_values(by="task_id", ascending=False)
-        df__output__label_studio_project_task = dt__output__label_studio_project_task.get_data(idx=output_df)
+        df__output__label_studio_project_task = dt__output__label_studio_project_task.get_data(
+            idx=cast(IndexDF, output_df)
+        )
         if len(df__output__label_studio_project_task) > 0:
             output_df = pd.merge(df__output__label_studio_project_task, output_df).drop(columns=["task_id"])
             dt__output__label_studio_project_annotation.store_chunk(output_df)
@@ -387,7 +390,7 @@ class LabelStudioUploadTasks(PipelineStep):
                 logger.info(f"Adding storage {storage_name=} to project: {result}")
         return self._project
 
-    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         dt__input_item = ds.get_table(self.input__item)
         assert isinstance(dt__input_item.table_store, TableStoreDB)
         check_columns_are_in_table(ds, self.input__item, self.primary_keys + self.columns)
@@ -522,8 +525,8 @@ def get_annotations_from_label_studio_projects(
     ds: DataStore,
     input_dts: List[DataTable],
     output_dts: List[DataTable],
-    run_config: RunConfig,
-    kwargs: Dict[str, Any],
+    run_config: Optional[RunConfig],
+    **kwargs,
 ) -> None:
     ls_client: label_studio_sdk.Client = kwargs["ls_client"]
     dt__label_studio_project: DataTable = input_dts[0]
@@ -578,7 +581,7 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
             )
         return self._ls_client
 
-    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[DatatableTransformStep]:
+    def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         assert "project_identifier" in self.primary_keys
         dt__input_item = ds.get_table(self.input__item)
         assert isinstance(dt__input_item.table_store, TableStoreDB)
