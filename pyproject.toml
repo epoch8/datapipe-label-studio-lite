@@ -22,7 +22,7 @@ label-studio-sdk = ">=0.0.34"
 flake8 = "*"
 black = "*"
 
-datapipe-core = {version=">=0.13.4, <0.14", extras=["sqlite"]}
+datapipe-core = {git = "https://github.com/epoch8/datapipe.git", rev = "b5790617b824ed9c9718d3e20ca405fcf124d873", extras = ["gcsfs", "s3fs", "ray"]}
 
 pytest = "*"
 pytest-xdist = "*"
