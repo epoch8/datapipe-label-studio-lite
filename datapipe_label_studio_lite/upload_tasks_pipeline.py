@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, List, Optional, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 import label_studio_sdk
 import numpy as np
@@ -223,13 +223,14 @@ def get_annotations_from_label_studio(
     ds: DataStore,
     input_dts: List[DataTable],
     output_dts: List[DataTable],
-    run_config: Optional[RunConfig] = None,
-    **kwargs,
+    run_config: Optional[RunConfig],
+    kwargs: Optional[Dict[str, Any]],
 ):
     """
     Записывает в табличку задачи из сервера LS вместе с разметкой согласно
     дате последней синхронизации
     """
+    kwargs = kwargs or {}
     get_project: Callable[[], label_studio_sdk.Project] = kwargs["get_project"]
     project = get_project()
     primary_keys: List[str] = kwargs["primary_keys"]
@@ -526,8 +527,9 @@ def get_annotations_from_label_studio_projects(
     input_dts: List[DataTable],
     output_dts: List[DataTable],
     run_config: Optional[RunConfig],
-    **kwargs,
+    kwargs: Optional[Dict[str, Any]],
 ) -> None:
+    kwargs = kwargs or {}
     ls_client: label_studio_sdk.Client = kwargs["ls_client"]
     dt__label_studio_project: DataTable = input_dts[0]
     df__label_studio_project = dt__label_studio_project.get_data()
