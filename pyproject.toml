@@ -18,10 +18,9 @@ requests = ">=2.24.0"
 datapipe-core = { version = ">=0.14.0-alpha.1, <0.15", allow-prereleases = true }
 label-studio-sdk = "^0.0.34"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 flake8 = "*"
 black = "*"
-datapipe-core = { version = ">=0.14.0-alpha.1, <0.15", allow-prereleases = true, extras=["sqlite"]}
 pytest = "*"
 pytest-xdist = "*"
 pytest-cases = "^3.6.4"

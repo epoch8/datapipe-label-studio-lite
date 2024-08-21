@@ -24,7 +24,8 @@ jobs:
   
       - name: Install dependencies
         run: |
-          pip install ".[dev]"
+          pip install . "flake8" "mypy"
+          pip install pandas-stubs pytest-cases types-setuptools types-redis types-tqdm types-pillow types-PyYAML types-requests
 
       - name: Lint with flake8
         run: |
@@ -93,7 +94,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install ".[dev]"
+          pip install . "pysqlite3-binary==0.5.0" "sqlalchemy-pysqlite3-binary==0.0.4"
 
       - name: Test with pytest
         run: |
