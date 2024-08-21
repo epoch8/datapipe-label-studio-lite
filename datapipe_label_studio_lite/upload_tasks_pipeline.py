@@ -224,7 +224,7 @@ def get_annotations_from_label_studio(
     input_dts: List[DataTable],
     output_dts: List[DataTable],
     run_config: Optional[RunConfig],
-    kwargs: Optional[Dict[str, Any]],
+    kwargs: Optional[Dict[str, Any]] = None,
 ):
     """
     Записывает в табличку задачи из сервера LS вместе с разметкой согласно
@@ -527,7 +527,7 @@ def get_annotations_from_label_studio_projects(
     input_dts: List[DataTable],
     output_dts: List[DataTable],
     run_config: Optional[RunConfig],
-    kwargs: Optional[Dict[str, Any]],
+    kwargs: Optional[Dict[str, Any]] = None,
 ) -> None:
     kwargs = kwargs or {}
     ls_client: label_studio_sdk.Client = kwargs["ls_client"]

@@ -16,7 +16,7 @@ numpy = ">=1.21.0"
 SQLAlchemy = ">=1.4.25"
 requests = ">=2.24.0"
 datapipe-core = { version = ">=0.14.0-alpha.1, <0.15", allow-prereleases = true }
-label-studio-sdk = ">=0.0.34"
+label-studio-sdk = "^0.0.34"
 
 [tool.poetry.dev-dependencies]
 flake8 = "*"
