@@ -10,16 +10,16 @@ authors = [
 exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <3.12"
+python = ">=3.9, <3.12"
 requests = ">=2.24.0, <3"
-datapipe-core = ">=0.13.0, <0.15"
+datapipe-core = {version=">=0.14.0-alpha.2", allow-prereleases=true}
 label-studio-sdk = ">=1.0.3, <1.1"
 
 [tool.poetry.dev-dependencies]
 flake8 = "*"
 black = "*"
 
-datapipe-core = {version=">=0.13.0, <0.15", extras=["sqlite"]}
+datapipe-core = {version=">=0.14.0-alpha.2", allow-prereleases=true, extras=["sqlite"]}
 
 pytest = "^7.4.3"
 pytest-xdist = "*"
