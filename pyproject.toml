@@ -21,9 +21,7 @@ label-studio-sdk = "^0.0.34"
 [tool.poetry.dev-dependencies]
 flake8 = "*"
 black = "*"
-
-datapipe-core = {git = "https://github.com/epoch8/datapipe.git", rev = "526b1abfc38eb2ffbdd48f89887a49e8af52b0b9", extras = ["gcsfs", "s3fs", "ray"]}
-
+datapipe-core = { version = ">=0.14.0-alpha.1, <0.15", allow-prereleases = true, extras=["sqlite"]}
 pytest = "*"
 pytest-xdist = "*"
 pytest-cases = "^3.6.4"

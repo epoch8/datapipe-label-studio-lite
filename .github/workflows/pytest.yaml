@@ -21,25 +21,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-
-      - name: Setup poetry
-        run: |
-          pip install poetry==1.5.0
   
       - name: Install dependencies
         run: |
-          poetry install --with dev
+          pip install ".[dev]"
 
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
-          poetry run flake8 datapipe_label_studio_lite --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 datapipe_label_studio_lite --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          poetry run flake8 datapipe_label_studio_lite --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 datapipe_label_studio_lite --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Lint with mypy
         run: |
-          poetry run mypy -p datapipe_label_studio_lite --ignore-missing-imports --follow-imports=silent --check-untyped-defs
+          mypy -p datapipe_label_studio_lite --ignore-missing-imports --follow-imports=silent --check-untyped-defs
 
   test:
     # needs: lint
@@ -95,17 +91,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Setup poetry
-        run: |
-          pip install poetry==1.5.0
-
       - name: Install dependencies
         run: |
-          poetry install --with dev
+          pip install ".[dev]"
 
       - name: Test with pytest
         run: |
-          poetry run pytest -vv -x
+          pytest -vv -x
         env:
           LABEL_STUDIO_HOST: localhost
           LABEL_STUDIO_PORT: 8080
