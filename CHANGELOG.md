@@ -1,10 +1,13 @@
 # 0.3.5
+
 * Update datapipe-core dependency 0.14+
 
 # 0.3.4
+
 * Update label_studio_sdk dependency (allow >2 pydantic)
 
 # 0.3.3
+
 * Update python dependency (allow 3.11 python)
 
 # 0.3.2
