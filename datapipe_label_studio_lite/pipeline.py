@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Union, List, Optional
+from typing import Any, Dict, Union, List, Optional, cast
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from datapipe.run_config import RunConfig
@@ -21,6 +21,7 @@ from datapipe.compute import (
     DataStore,
     Table,
     Catalog,
+    ComputeStep,
 )
 from datapipe.step.batch_transform import BatchTransformStep
 from datapipe.step.datatable_transform import DatatableTransformStep
@@ -178,7 +179,7 @@ class LabelStudioStep(PipelineStep):
 
     def build_compute(
         self, ds: DataStore, catalog: Catalog
-    ) -> List[DatatableTransformStep]:
+    ) -> List[ComputeStep]:
         input_dt = catalog.get_datatable(ds, self.input)
         input_uploader_dt = ds.get_or_create_table(
             f"{self.input}_upload",
@@ -343,7 +344,7 @@ class LabelStudioStep(PipelineStep):
                 return values
 
             sync_datetime_df = sync_datetime_dt.get_data(
-                idx=pd.DataFrame({"project_id": [self.project.id]})
+                idx=cast(IndexDF, pd.DataFrame({"project_id": [self.project.id]}))
             )
 
             if sync_datetime_df.empty:
@@ -407,7 +408,7 @@ class LabelStudioStep(PipelineStep):
             DatatableTransformStep(
                 name=f"{self.name_prefix}get_annotations_from_ls",
                 labels=self.labels,
-                func=get_annotations_from_ls,
+                func=get_annotations_from_ls,  # type: ignore
                 input_dts=[],
                 output_dts=[output_dt],
                 check_for_changes=False,
