@@ -10,7 +10,7 @@ authors = [
 exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <3.12"
+python = ">=3.9,<3.12"
 requests = ">=2.24.0, <3"
 datapipe-core = ">=0.13.0, <0.14"
 label-studio-sdk = ">=1.0.3, <1.1"
