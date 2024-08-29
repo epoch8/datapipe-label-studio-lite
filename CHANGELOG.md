@@ -1,3 +1,6 @@
+# 0.3.5
+* Update datapipe-core dependency 0.14+
+
 # 0.3.4
 * Update label_studio_sdk dependency (allow >2 pydantic)
 
