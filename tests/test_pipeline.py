@@ -14,15 +14,16 @@ from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.store.database import TableStoreDB
 from datapipe.types import data_to_index
+from pkg_resources import parse_version
+from pytest_cases import parametrize, parametrize_with_cases
+from sqlalchemy.sql.schema import Column
+from sqlalchemy.sql.sqltypes import JSON, String
+
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title, is_service_up
 from datapipe_label_studio_lite.upload_predictions_pipeline import (
     LabelStudioUploadPredictions,
 )
 from datapipe_label_studio_lite.upload_tasks_pipeline import LabelStudioUploadTasks
-from pkg_resources import parse_version
-from pytest_cases import parametrize, parametrize_with_cases
-from sqlalchemy.sql.schema import Column
-from sqlalchemy.sql.sqltypes import JSON, String
 
 PROJECT_LABEL_CONFIG_TEST = """<View>
   <Text name="text" value="$text"/>
@@ -52,7 +53,10 @@ def gen_data_df():
     yield pd.DataFrame(
         {
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
-            "text": [np.random.choice([x for x in string.ascii_letters]) for i in range(TASKS_COUNT)],
+            "text": [
+                np.random.choice([x for x in string.ascii_letters])
+                for i in range(TASKS_COUNT)
+            ],
         }
     )
 
@@ -63,7 +67,9 @@ def wrapped_partial(func, *args, **kwargs):
     return partial_func
 
 
-def convert_to_ls_input_data(data_df, include_preannotations: bool, include_prepredictions: bool):
+def convert_to_ls_input_data(
+    data_df, include_preannotations: bool, include_prepredictions: bool
+):
     columns = ["id", "text"]
 
     for column, bool_ in [
@@ -76,7 +82,9 @@ def convert_to_ls_input_data(data_df, include_preannotations: bool, include_prep
                     {
                         "result": [
                             {
-                                "value": {"choices": [np.random.choice(["Class1", "Class2"])]},
+                                "value": {
+                                    "choices": [np.random.choice(["Class1", "Class2"])]
+                                },
                                 "from_name": "label",
                                 "to_name": "text",
                                 "type": "choices",
@@ -109,7 +117,9 @@ def add_predictions(data_df):
 
 
 INCLUDE_PARAMS = [
-    pytest.param({"include_preannotations": False, "include_prepredictions": False}, id=""),
+    pytest.param(
+        {"include_preannotations": False, "include_prepredictions": False}, id=""
+    ),
     # pytest.param(
     #     {
     #         'include_preannotations': True,
@@ -315,7 +325,9 @@ def ls_moderation_base(
         df_annotation = ds.get_table("ls_output").get_data()
         for idx in df_annotation.index:
             assert len(df_annotation.loc[idx, "annotations"]) == 1
-            assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"]["choices"][0] in ["Class1", "Class2"]
+            assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"][
+                "choices"
+            ][0] in ["Class1", "Class2"]
 
     # Person annotation imitation & incremental processing
     project = get_project_by_title(label_studio_session, project_title)
@@ -350,20 +362,30 @@ def ls_moderation_base(
             label_studio_session.make_request(
                 "POST",
                 f"api/tasks/{task['id']}/annotations/",
-                json=dict(result=annotation["result"], was_cancelled=False, task_id=task["id"]),
+                json=dict(
+                    result=annotation["result"], was_cancelled=False, task_id=task["id"]
+                ),
             )
         run_steps(ds, steps)
-        idxs_df = pd.DataFrame.from_records({"id": [task["data"]["id"] for task in tasks[idxs]]})
-        df_annotation = ds.get_table("ls_output").get_data(idx=data_to_index(idxs_df, ["id"]))
+        idxs_df = pd.DataFrame.from_records(
+            {"id": [task["data"]["id"] for task in tasks[idxs]]}
+        )
+        df_annotation = ds.get_table("ls_output").get_data(
+            idx=data_to_index(idxs_df, ["id"])
+        )
         if include_predictions:
-            df_prediction = ds.get_table("ls_prediction").get_data(idx=data_to_index(idxs_df, ["id"]))
+            df_prediction = ds.get_table("ls_prediction").get_data(
+                idx=data_to_index(idxs_df, ["id"])
+            )
             assert len(df_prediction) == len(df_annotation)
             df_prediction = pd.merge(df_annotation, df_prediction)
         for idx in df_annotation.index:
-            assert len(df_annotation.loc[idx, "annotations"]) == (1 + include_preannotations)
-            assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"]["choices"][0] in (
-                ["Class1", "Class2"]
+            assert len(df_annotation.loc[idx, "annotations"]) == (
+                1 + include_preannotations
             )
+            assert df_annotation.loc[idx, "annotations"][0]["result"][0]["value"][
+                "choices"
+            ][0] in (["Class1", "Class2"])
             # if include_predictions:
             #     assert len(df_annotation.loc[idx, 'predictions']) == include_prepredictions + include_predictions
             #     if include_prepredictions or include_predictions:
@@ -422,7 +444,10 @@ def test_ls_when_data_is_changed(
     df1 = pd.DataFrame(
         {
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
-            "text": (["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] + ["a"] * (TASKS_COUNT % 10))
+            "text": (
+                ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+                + ["a"] * (TASKS_COUNT % 10)
+            )
             * (TASKS_COUNT // 10),
         }
     )
@@ -430,7 +455,10 @@ def test_ls_when_data_is_changed(
     df2 = pd.DataFrame(
         {
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
-            "text": (["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"] + ["a"] * (TASKS_COUNT % 10))
+            "text": (
+                ["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"]
+                + ["a"] * (TASKS_COUNT % 10)
+            )
             * (TASKS_COUNT // 10),
         }
     )
@@ -499,7 +527,10 @@ def test_ls_when_task_is_missing_from_ls(
     df1 = pd.DataFrame(
         {
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
-            "text": (["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] + ["a"] * (TASKS_COUNT % 10))
+            "text": (
+                ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+                + ["a"] * (TASKS_COUNT % 10)
+            )
             * (TASKS_COUNT // 10),
         }
     )
@@ -507,7 +538,10 @@ def test_ls_when_task_is_missing_from_ls(
     df2 = pd.DataFrame(
         {
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
-            "text": (["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"] + ["a"] * (TASKS_COUNT % 10))
+            "text": (
+                ["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"]
+                + ["a"] * (TASKS_COUNT % 10)
+            )
             * (TASKS_COUNT // 10),
         }
     )
@@ -582,7 +616,11 @@ def test_ls_when_some_data_is_deleted(
         return
     # These steps should upload tasks
     data_df = next(gen_data_df())
-    data_df2 = data_df.set_index("id").drop(index=[f"task_{i}" for i in [0, 3, 5, 7, 9]]).reset_index()
+    data_df2 = (
+        data_df.set_index("id")
+        .drop(index=[f"task_{i}" for i in [0, 3, 5, 7, 9]])
+        .reset_index()
+    )
 
     def _gen():
         yield data_df
@@ -678,7 +716,9 @@ def test_ls_specific_updating_scenary(
     project = get_project_by_title(label_studio_session, project_title)
     assert project is not None
     tasks_before = project.get_tasks()
-    tasks_before_sorted = np.array(sorted(tasks_before, key=lambda task: task["data"]["id"]))
+    tasks_before_sorted = np.array(
+        sorted(tasks_before, key=lambda task: task["data"]["id"])
+    )
     assert len(tasks_before) == 10
     tasks_ids_before = [task["id"] for task in tasks_before]
 
@@ -701,7 +741,9 @@ def test_ls_specific_updating_scenary(
         label_studio_session.make_request(
             "POST",
             f"api/tasks/{task['id']}/annotations/",
-            json=dict(result=annotation["result"], was_cancelled=False, task_id=task["id"]),
+            json=dict(
+                result=annotation["result"], was_cancelled=False, task_id=task["id"]
+            ),
         )
 
     # Получаем текущую полученную разметку
@@ -733,7 +775,10 @@ def test_ls_specific_updating_scenary(
     for idx in df_ls.index:
         if df_ls.loc[idx, "id"] in [f"task_{i}" for i in [0, 1, 2, 6, 7, 8]]:
             # Разметка при обновлении задачи не должна уйти, если delete_unannotated_tasks_only_on_update=False
-            if df_ls.loc[idx, "id"] in [f"task_{i}" for i in [0, 1, 2]] and delete_unannotated_tasks_only_on_update:
+            if (
+                df_ls.loc[idx, "id"] in [f"task_{i}" for i in [0, 1, 2]]
+                and delete_unannotated_tasks_only_on_update
+            ):
                 assert len(df_ls.loc[idx, "annotations"]) > 0
                 assert df_ls.loc[idx, "task_id"] in tasks_ids_before
             else:
@@ -780,7 +825,9 @@ def test_ls_moderate_then_delete_task(
         label_studio_session=label_studio_session,
         delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
     )
-    ds.get_table("ls_input_data_raw").delete_by_idx(idx=pd.DataFrame({"id": [f"task_{i}" for i in range(5)]}))
+    ds.get_table("ls_input_data_raw").delete_by_idx(
+        idx=pd.DataFrame({"id": [f"task_{i}" for i in range(5)]})
+    )
     run_steps(ds, steps)
     project = get_project_by_title(label_studio_session, project_title)
     tasks_after = project.get_tasks()
