@@ -46,6 +46,7 @@ class LabelStudioStep(PipelineStep):
     dbconn: Union[DBConn, str]
     project_identifier: Union[str, int]  # project_title or id
     data_sql_schema: List[Column]
+    secondary_input: Optional[str] = None
 
     name: Optional[str] = None
 
@@ -218,6 +219,10 @@ class LabelStudioStep(PipelineStep):
             ),
         )
         catalog.add_datatable(self.output, Table(output_dt.table_store))
+        if self.secondary_input is not None:
+            self.secondary_dt = catalog.get_datatable(ds, self.secondary_input)
+        else:
+            self.secondary_dt = None
 
         def upload_tasks(df: pd.DataFrame, idx: IndexDF) -> pd.DataFrame:
             """
@@ -228,8 +233,8 @@ class LabelStudioStep(PipelineStep):
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             idx = data_to_index(idx, self.primary_keys)
+            df_idx = data_to_index(df, self.primary_keys)
             if self.delete_unannotated_tasks_only_on_update:
-                df_idx = data_to_index(df, self.primary_keys)
                 df_existing_tasks = input_uploader_dt.get_data(idx=idx)
                 df_existing_tasks_with_output = pd.merge(
                     df_existing_tasks, output_dt.get_data(idx=idx), how="left"
@@ -296,6 +301,36 @@ class LabelStudioStep(PipelineStep):
                 return pd.DataFrame(columns=self.primary_keys + ["task_id"])
 
             if len(df_to_be_uploaded) > 0:
+                # this df_secondary_data causes problems because it can be empty. Why it can be empty? - I don't know
+                # As a result, there is incoming data that needs to be sent to LS, but because of the merge below
+                # no data gets to the LS
+
+                # It is not a good idea to omit data from moderation, so I cannot discard the incoming data
+                # Partial solution is to send the data without secondary data to LS
+                # This code already handles this situation secondary_dt is None (or it can be empty in my case)
+
+                # So as a result: data gets into LS, no exceptions raised, moderator can later review the data
+                # in LS aand ask why the data in the LS is not complete -> further investigation
+                # But the code is working
+                if self.secondary_dt is not None:
+                    df_secondary_data = self.secondary_dt.get_data(idx=df_idx)
+                    if df_secondary_data.empty:
+                        secondary_columns = []
+                    else:
+                        secondary_columns = list(
+                            set(df_secondary_data.columns) - set(df.columns)
+                        )
+                        df_to_be_uploaded = pd.merge(
+                            left=df_to_be_uploaded,
+                            right=df_secondary_data,
+                            on=self.primary_keys,
+                        )
+                        # convert all boolean columns to string because of serialization issues for np.bool_ type
+                        for col in df_to_be_uploaded.columns:
+                            if df_to_be_uploaded[col].dtype == np.bool_:
+                                df_to_be_uploaded[col] = df_to_be_uploaded[col].astype(str)
+                else:
+                    secondary_columns = []
                 data_to_be_added = [
                     {
                         "data": {
@@ -303,7 +338,7 @@ class LabelStudioStep(PipelineStep):
                                 primary_key: self._convert_data_if_need(
                                     df_to_be_uploaded.loc[idx, primary_key]
                                 )
-                                for primary_key in self.primary_keys + self.data_columns
+                                for primary_key in self.primary_keys + self.data_columns + secondary_columns
                             }
                         }
                     }
