@@ -92,10 +92,16 @@ def upload_prediction_to_label_studio(
         )
         uploaded_predictions.append(prediction)
     df["prediction_id"] = [getattr(prediction, "id", None) for prediction in uploaded_predictions]
-    df["prediction"] = [
-        _make_jsonable(prediction.model_dump() if hasattr(prediction, "model_dump") else prediction)
-        for prediction in uploaded_predictions
-    ]
+    df["prediction"] = pd.Series(
+        [
+            _make_jsonable(
+                prediction.model_dump() if hasattr(prediction, "model_dump") else prediction
+            )
+            for prediction in uploaded_predictions
+        ],
+        dtype=object,
+        index=df.index,
+    )
     return df[primary_keys + ["task_id", "prediction_id", "model_version", "prediction"]]
 
 
