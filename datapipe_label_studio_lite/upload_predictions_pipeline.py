@@ -21,11 +21,9 @@ from label_studio_sdk import LabelStudio
 from sqlalchemy import JSON, Column, Integer, String
 
 from datapipe_label_studio_lite.sdk_utils import (
-    get_project_by_title,
-    login_and_get_token,
-    project_to_dict,
+    get_ls_client,
+    resolve_project_id,
 )
-from datapipe_label_studio_lite.types import ProjectDict
 from datapipe_label_studio_lite.upload_tasks_pipeline import logger
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 
@@ -131,15 +129,7 @@ class LabelStudioUploadPredictions(PipelineStep):
     @property
     def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            api_key = (
-                self.api_key
-                if isinstance(self.api_key, str)
-                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
-            )
-            self._ls_client = LabelStudio(
-                base_url=self.ls_url,
-                api_key=api_key,
-            )
+            self._ls_client = get_ls_client(self.ls_url, self.api_key)
         return self._ls_client
 
     def get_project_context(self) -> Tuple[LabelStudio, int]:
@@ -149,15 +139,7 @@ class LabelStudioUploadPredictions(PipelineStep):
         """
         if self._project_id is not None:
             return (self.ls_client, self._project_id)
-        project: Optional[ProjectDict]
-        if str(self.project_identifier).isnumeric():
-            project = project_to_dict(self.ls_client.projects.get(id=int(self.project_identifier)))
-        else:
-            project = get_project_by_title(self.ls_client, str(self.project_identifier))
-        if project is None:
-            raise ValueError(f"Project with {self.project_identifier=} not found")
-        assert project is not None
-        self._project_id = project["id"]
+        self._project_id = resolve_project_id(self.ls_client, self.project_identifier)
         return (self.ls_client, self._project_id)
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
@@ -290,15 +272,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
     @property
     def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            api_key = (
-                self.api_key
-                if isinstance(self.api_key, str)
-                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
-            )
-            self._ls_client = LabelStudio(
-                base_url=self.ls_url,
-                api_key=api_key,
-            )
+            self._ls_client = get_ls_client(self.ls_url, self.api_key)
         return self._ls_client
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:

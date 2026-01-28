@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Union, cast
+from typing import List, Optional, Union
 
 import pandas as pd
 from datapipe.compute import (
@@ -20,43 +20,16 @@ from label_studio_sdk import LabelStudio
 from sqlalchemy import Column, Integer
 
 from datapipe_label_studio_lite.sdk_utils import (
-    get_project_by_title,
-    login_and_get_token,
-    project_to_dict,
-    storage_to_dict,
+    ensure_project,
+    ensure_project_storages,
+    get_ls_client,
 )
-from datapipe_label_studio_lite.types import ProjectDict
+from datapipe_label_studio_lite.types import Buckets, GCSBucket, ProjectDict, S3Bucket
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 
-
-@dataclass
-class GCSBucket:
-    bucket: str
-    google_application_credentials: Optional[str] = None
-
-    @property
-    def type(self):
-        return "gcs"
-
-
-@dataclass
-class S3Bucket:
-    bucket: str
-    key: str
-    secret: str
-    region_name: Optional[str] = None
-    endpoint_url: Optional[str] = None
-
-    @property
-    def type(self):
-        return "s3"
-
-
-@dataclass
-class Buckets:
-    buckets: List[Union[GCSBucket, S3Bucket]]
+__all__ = ["Buckets", "CreateLabelStudioProjects", "GCSBucket", "S3Bucket"]
 
 
 @dataclass
@@ -81,15 +54,7 @@ class CreateLabelStudioProjects(PipelineStep):
     @property
     def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            api_key = (
-                self.api_key
-                if isinstance(self.api_key, str)
-                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
-            )
-            self._ls_client = LabelStudio(
-                base_url=self.ls_url,
-                api_key=api_key,
-            )
+            self._ls_client = get_ls_client(self.ls_url, self.api_key)
         return self._ls_client
 
     def create_project(
@@ -104,76 +69,17 @@ class CreateLabelStudioProjects(PipelineStep):
         """
         if isinstance(project_identifier, str):
             assert len(project_identifier) <= 50
-        project: Optional[ProjectDict]
-        if str(project_identifier).isnumeric():
-            project = project_to_dict(self.ls_client.projects.get(id=int(project_identifier)))
-        else:
-            project = get_project_by_title(self.ls_client, str(project_identifier))
-        if project is None:
-            project = project_to_dict(
-                self.ls_client.projects.create(
-                    title=str(project_identifier),
-                    description=project_description_at_create,
-                    label_config=project_label_config_at_create,
-                    expert_instruction="",
-                    show_instruction=False,
-                    show_skip_button=False,
-                    enable_empty_annotation=True,
-                    show_annotation_history=False,
-                    organization=1,
-                    color="#FFFFFF",
-                    maximum_annotations=1,
-                    is_published=False,
-                    model_version="",
-                    is_draft=False,
-                    min_annotations_to_start_training=10,
-                    show_collab_predictions=True,
-                    sampling="Sequential sampling",
-                    show_ground_truth_first=True,
-                    show_overlap_first=True,
-                    overlap_cohort_percentage=100,
-                    task_data_login=None,
-                    task_data_password=None,
-                    control_weights={},
-                )
-            )
-            logger.info(
-                "Project with %s not found, created new project with id=%s",
-                project_identifier,
-                project["id"],
-            )
-        assert project is not None
-        project_id = project["id"]
-        connected_buckets = set()
-        for s3_storage in self.ls_client.import_storage.s3.list(project=project_id):
-            storage_bucket = storage_to_dict(s3_storage).get("bucket")
-            if storage_bucket:
-                connected_buckets.add(f"s3://{storage_bucket}")
-        for gcs_storage in self.ls_client.import_storage.gcs.list(project=project_id):
-            storage_bucket = storage_to_dict(gcs_storage).get("bucket")
-            if storage_bucket:
-                connected_buckets.add(f"gcs://{storage_bucket}")
-        for storage in cast(List[Union[GCSBucket, S3Bucket]], self.storages):
-            if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
-                result: object
-                if isinstance(storage, S3Bucket):
-                    result = self.ls_client.import_storage.s3.create(
-                        project=project_id,
-                        bucket=storage.bucket,
-                        title=storage_name,
-                        aws_access_key_id=storage.key,
-                        aws_secret_access_key=storage.secret,
-                        s3endpoint=storage.endpoint_url,
-                        region_name=storage.region_name,
-                    )
-                elif isinstance(storage, GCSBucket):
-                    result = self.ls_client.import_storage.gcs.create(
-                        project=project_id,
-                        bucket=storage.bucket,
-                        title=storage_name,
-                        google_application_credentials=storage.google_application_credentials,
-                    )
-                logger.info(f"Adding storage {storage_name=} to project: {result}")
+        project = ensure_project(
+            self.ls_client,
+            project_identifier,
+            project_label_config_at_create,
+            project_description_at_create,
+        )
+        ensure_project_storages(
+            self.ls_client,
+            project["id"],
+            self.storages,
+        )
         return project
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:

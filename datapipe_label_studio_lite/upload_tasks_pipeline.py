@@ -36,14 +36,13 @@ from label_studio_sdk.types.import_api_request import (
 from sqlalchemy import JSON, Column, DateTime, Integer
 
 from datapipe_label_studio_lite.sdk_utils import (
-    get_project_by_title,
+    ensure_project,
+    ensure_project_storages,
+    get_ls_client,
     get_tasks_iter,
     import_tasks_response_to_dict,
-    login_and_get_token,
-    project_to_dict,
-    storage_to_dict,
 )
-from datapipe_label_studio_lite.types import GCSBucket, ProjectDict, S3Bucket
+from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
@@ -329,15 +328,7 @@ class LabelStudioUploadTasks(PipelineStep):
     @property
     def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            api_key = (
-                self.api_key
-                if isinstance(self.api_key, str)
-                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
-            )
-            self._ls_client = LabelStudio(
-                base_url=self.ls_url,
-                api_key=api_key,
-            )
+            self._ls_client = get_ls_client(self.ls_url, self.api_key)
         return self._ls_client
 
     def get_project_context(self) -> Tuple[LabelStudio, int]:
@@ -347,76 +338,18 @@ class LabelStudioUploadTasks(PipelineStep):
         """
         if self._project_id is not None:
             return (self.ls_client, self._project_id)
-        project: Optional[ProjectDict]
-        if str(self.project_identifier).isnumeric():
-            project = project_to_dict(self.ls_client.projects.get(id=int(self.project_identifier)))
-        else:
-            project = get_project_by_title(self.ls_client, str(self.project_identifier))
-        if project is None:
-            project = project_to_dict(
-                self.ls_client.projects.create(
-                    title=str(self.project_identifier),
-                    description=self.project_description_at_create,
-                    label_config=self.project_label_config_at_create,
-                    expert_instruction="",
-                    show_instruction=False,
-                    show_skip_button=False,
-                    enable_empty_annotation=True,
-                    show_annotation_history=False,
-                    organization=1,
-                    color="#FFFFFF",
-                    maximum_annotations=1,
-                    is_published=False,
-                    model_version="",
-                    is_draft=False,
-                    min_annotations_to_start_training=10,
-                    show_collab_predictions=True,
-                    sampling="Sequential sampling",
-                    show_ground_truth_first=True,
-                    show_overlap_first=True,
-                    overlap_cohort_percentage=100,
-                    task_data_login=None,
-                    task_data_password=None,
-                    control_weights={},
-                )
-            )
-            logger.info(
-                "Project with %s not found, created new project with id=%s",
-                self.project_identifier,
-                project["id"],
-            )
-        assert project is not None
+        project = ensure_project(
+            self.ls_client,
+            self.project_identifier,
+            self.project_label_config_at_create,
+            self.project_description_at_create,
+        )
         self._project_id = project["id"]
-        connected_buckets = set()
-        for s3_storage in self.ls_client.import_storage.s3.list(project=self._project_id):
-            storage_bucket = storage_to_dict(s3_storage).get("bucket")
-            if storage_bucket:
-                connected_buckets.add(f"s3://{storage_bucket}")
-        for gcs_storage in self.ls_client.import_storage.gcs.list(project=self._project_id):
-            storage_bucket = storage_to_dict(gcs_storage).get("bucket")
-            if storage_bucket:
-                connected_buckets.add(f"gcs://{storage_bucket}")
-        for storage in cast(List[Union[GCSBucket, S3Bucket]], self.storages):
-            if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
-                result: object
-                if isinstance(storage, S3Bucket):
-                    result = self.ls_client.import_storage.s3.create(
-                        project=self._project_id,
-                        bucket=storage.bucket,
-                        title=storage_name,
-                        aws_access_key_id=storage.key,
-                        aws_secret_access_key=storage.secret,
-                        s3endpoint=storage.endpoint_url,
-                        region_name=storage.region_name,
-                    )
-                elif isinstance(storage, GCSBucket):
-                    result = self.ls_client.import_storage.gcs.create(
-                        project=self._project_id,
-                        bucket=storage.bucket,
-                        title=storage_name,
-                        google_application_credentials=storage.google_application_credentials,
-                    )
-                logger.info(f"Adding storage {storage_name=} to project: {result}")
+        ensure_project_storages(
+            self.ls_client,
+            self._project_id,
+            self.storages,
+        )
         return (self.ls_client, self._project_id)
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
@@ -609,15 +542,7 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
     @property
     def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            api_key = (
-                self.api_key
-                if isinstance(self.api_key, str)
-                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
-            )
-            self._ls_client = LabelStudio(
-                base_url=self.ls_url,
-                api_key=api_key,
-            )
+            self._ls_client = get_ls_client(self.ls_url, self.api_key)
         return self._ls_client
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
