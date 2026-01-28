@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
 import pandas as pd
-from label_studio_sdk import LabelStudio
 from datapipe.compute import (
     Catalog,
     ComputeStep,
@@ -17,6 +16,9 @@ from datapipe.executor import ExecutorConfig
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.store.database import TableStoreDB
 from datapipe.types import Labels
+from label_studio_sdk import LabelStudio
+from sqlalchemy import Column, Integer
+
 from datapipe_label_studio_lite.sdk_utils import (
     get_project_by_title,
     login_and_get_token,
@@ -25,7 +27,6 @@ from datapipe_label_studio_lite.sdk_utils import (
 )
 from datapipe_label_studio_lite.types import ProjectDict
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
-from sqlalchemy import Column, Integer
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 

@@ -1,9 +1,8 @@
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple, Union
 
 import pandas as pd
-from label_studio_sdk import LabelStudio
 from datapipe.compute import (
     Catalog,
     ComputeStep,
@@ -18,15 +17,17 @@ from datapipe.executor import ExecutorConfig
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.store.database import TableStoreDB
 from datapipe.types import IndexDF, Labels, data_to_index
+from label_studio_sdk import LabelStudio
+from sqlalchemy import JSON, Column, Integer, String
+
 from datapipe_label_studio_lite.sdk_utils import (
     get_project_by_title,
     login_and_get_token,
     project_to_dict,
 )
-from datapipe_label_studio_lite.upload_tasks_pipeline import logger
 from datapipe_label_studio_lite.types import ProjectDict
+from datapipe_label_studio_lite.upload_tasks_pipeline import logger
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
-from sqlalchemy import JSON, Column, Integer, String
 
 
 def _make_jsonable(value: object) -> object:
@@ -94,9 +95,7 @@ def upload_prediction_to_label_studio(
         uploaded_predictions.append(prediction)
     df["prediction_id"] = [getattr(prediction, "id", None) for prediction in uploaded_predictions]
     df["prediction"] = [
-        _make_jsonable(
-            prediction.model_dump() if hasattr(prediction, "model_dump") else prediction
-        )
+        _make_jsonable(prediction.model_dump() if hasattr(prediction, "model_dump") else prediction)
         for prediction in uploaded_predictions
     ]
     return df[primary_keys + ["task_id", "prediction_id", "model_version", "prediction"]]
@@ -152,9 +151,7 @@ class LabelStudioUploadPredictions(PipelineStep):
             return (self.ls_client, self._project_id)
         project: Optional[ProjectDict]
         if str(self.project_identifier).isnumeric():
-            project = project_to_dict(
-                self.ls_client.projects.get(id=int(self.project_identifier))
-            )
+            project = project_to_dict(self.ls_client.projects.get(id=int(self.project_identifier)))
         else:
             project = get_project_by_title(self.ls_client, str(self.project_identifier))
         if project is None:
@@ -246,6 +243,7 @@ def upload_prediction_to_label_studio_projects(
             df__label_studio_project_task["project_identifier"] == project_identifier
         ]
         idx_by_project_identifier = idx[idx["project_identifier"] == project_identifier]
+
         def _get_project_context(project_id: int = project_id) -> Tuple[LabelStudio, int]:
             return (ls_client, project_id)
 

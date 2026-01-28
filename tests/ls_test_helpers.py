@@ -16,9 +16,7 @@ PROJECT_LABEL_CONFIG_TEST = """<View>
 TASKS_COUNT = 10
 
 INCLUDE_PARAMS = [
-    pytest.param(
-        {"include_preannotations": False, "include_prepredictions": False}, id=""
-    ),
+    pytest.param({"include_preannotations": False, "include_prepredictions": False}, id=""),
     # pytest.param(
     #     {
     #         "include_preannotations": True,
@@ -76,9 +74,7 @@ def _make_result_item():
     return {"result": [_make_choice_result()]}
 
 
-def convert_to_ls_input_data(
-    data_df, include_preannotations: bool, include_prepredictions: bool, base_columns
-):
+def convert_to_ls_input_data(data_df, include_preannotations: bool, include_prepredictions: bool, base_columns):
     columns = list(base_columns)
     for column, bool_ in [
         ("preannotations", include_preannotations),

@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 from datapipe.store.database import DBConn
-from datapipe_label_studio_lite.sdk_utils import login_and_get_token, sign_up
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+
+from datapipe_label_studio_lite.sdk_utils import login_and_get_token, sign_up
 
 if (Path(__file__).parent / ".env").exists():
     load_dotenv(Path(__file__).parent / ".env")
@@ -49,6 +50,7 @@ def dbconn():
 
     else:
         yield DBConn(DBCONNSTR, DB_TEST_SCHEMA)
+
 
 @pytest.fixture(scope="session")
 def ls_url() -> str:

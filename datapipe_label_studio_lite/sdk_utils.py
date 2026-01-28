@@ -7,7 +7,12 @@ import requests
 from label_studio_sdk import LabelStudio
 from label_studio_sdk.core.api_error import ApiError
 
-from datapipe_label_studio_lite.types import ProjectDict, StorageDict, ImportTasksResponseDict
+from datapipe_label_studio_lite.types import (
+    ImportTasksResponseDict,
+    ProjectDict,
+    StorageDict,
+)
+
 
 def sign_up(ls_url: str, email: str, password: str) -> Optional[str]:
     session = requests.Session()

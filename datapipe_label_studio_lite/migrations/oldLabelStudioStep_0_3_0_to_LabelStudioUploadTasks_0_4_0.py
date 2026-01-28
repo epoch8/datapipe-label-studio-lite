@@ -6,13 +6,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import pandas as pd
-from label_studio_sdk.data_manager import DATETIME_FORMAT
-from label_studio_sdk import LabelStudio
-from sqlalchemy import Column, DateTime, Integer, JSON, MetaData, Table, inspect, text
-
 from datapipe.datatable import DataStore
-from datapipe.store.database import DBConn
-from datapipe.store.database import TableStoreDB
+from datapipe.store.database import DBConn, TableStoreDB
+from label_studio_sdk import LabelStudio
+from label_studio_sdk.data_manager import DATETIME_FORMAT
+from sqlalchemy import JSON, Column, DateTime, Integer, MetaData, Table, inspect, text
+
 from datapipe_label_studio_lite.sdk_utils import (
     get_project_by_title,
     get_tasks_iter,
@@ -43,9 +42,7 @@ class LabelStudioMigrationSpec:
     old_step_name: Optional[str] = None
 
 
-def _compute_transform_meta_table_name(
-    step_name: str, input_table: str, output_table: str
-) -> str:
+def _compute_transform_meta_table_name(step_name: str, input_table: str, output_table: str) -> str:
     parts = ["BatchTransformStep", step_name, input_table, output_table]
     hasher = hashlib.shake_128()
     hasher.update("".join(parts).encode("utf-8"))
@@ -66,11 +63,7 @@ def _rename_table(dbconn: DBConn, old_name: str, new_name: str) -> None:
 def _get_project(
     ls_url: str, api_key: Union[str, Tuple[str, str]], project_identifier: Union[str, int]
 ) -> Tuple[LabelStudio, int]:
-    resolved_key = (
-        api_key
-        if isinstance(api_key, str)
-        else login_and_get_token(ls_url, api_key[0], api_key[1])
-    )
+    resolved_key = api_key if isinstance(api_key, str) else login_and_get_token(ls_url, api_key[0], api_key[1])
     client = LabelStudio(
         base_url=ls_url,
         api_key=resolved_key,
@@ -86,9 +79,7 @@ def _get_project(
     return client, project["id"]
 
 
-def _get_input_table_columns(
-    dbconn: DBConn, input_table: str
-) -> Dict[str, Column[Any]]:
+def _get_input_table_columns(dbconn: DBConn, input_table: str) -> Dict[str, Column[Any]]:
     metadata = MetaData()
     table = Table(input_table, metadata, autoload_with=dbconn.con)
     return {column.name: column for column in table.columns}
@@ -108,11 +99,7 @@ def _ensure_columns(
         col_type = column.type.compile(dialect=dbconn.con.dialect)
         quoted = _quote_identifier(dbconn, table_name)
         with dbconn.con.begin() as con:
-            con.execute(
-                text(
-                    f"ALTER TABLE {quoted} ADD COLUMN {column.name} {col_type}"
-                )
-            )
+            con.execute(text(f"ALTER TABLE {quoted} ADD COLUMN {column.name} {col_type}"))
     return len(missing) > 0
 
 
@@ -159,8 +146,7 @@ def migrate_labelstudio_step_to_upload_tasks(
 
     input_columns = _get_input_table_columns(input_dbconn, spec.input_table)
     primary_schema: List[Column[Any]] = [
-        Column(name, input_columns[name].type, primary_key=True)
-        for name in spec.primary_keys
+        Column(name, input_columns[name].type, primary_key=True) for name in spec.primary_keys
     ]
 
     task_schema: List[Column[Any]] = primary_schema + [Column("task_id", Integer)]
@@ -190,9 +176,7 @@ def migrate_labelstudio_step_to_upload_tasks(
             data_sql_schema=annotation_schema,
             create_table=True,
         )
-    annotation_columns_added = _ensure_columns(
-        dbconn, new_annotation_table, annotation_schema
-    )
+    annotation_columns_added = _ensure_columns(dbconn, new_annotation_table, annotation_schema)
 
     if sync_table_missing:
         TableStoreDB(
@@ -204,17 +188,13 @@ def migrate_labelstudio_step_to_upload_tasks(
     _ensure_columns(dbconn, new_sync_table, sync_schema)
 
     if rename_transform_meta:
-        old_meta_name = _compute_transform_meta_table_name(
-            old_step_name, spec.input_table, upload_table
-        )
+        old_meta_name = _compute_transform_meta_table_name(old_step_name, spec.input_table, upload_table)
         new_meta_name = _compute_transform_meta_table_name(
             "upload_tasks_to_label_studio", spec.input_table, new_task_table
         )
         inspector = inspect(dbconn.con)
         if inspector.has_table(old_meta_name) and not inspector.has_table(new_meta_name):
-            logger.info(
-                "Renaming transform meta table %s -> %s", old_meta_name, new_meta_name
-            )
+            logger.info("Renaming transform meta table %s -> %s", old_meta_name, new_meta_name)
             _rename_table(dbconn, old_meta_name, new_meta_name)
         elif inspector.has_table(old_meta_name) and inspector.has_table(new_meta_name):
             logger.info(
@@ -223,9 +203,8 @@ def migrate_labelstudio_step_to_upload_tasks(
                 old_meta_name,
             )
 
-    should_backfill = (
-        backfill_new_tables
-        and (task_table_missing or annotation_table_missing or task_columns_added or annotation_columns_added)
+    should_backfill = backfill_new_tables and (
+        task_table_missing or annotation_table_missing or task_columns_added or annotation_columns_added
     )
 
     if not should_backfill:
@@ -298,7 +277,5 @@ def migrate_labelstudio_step_to_upload_tasks(
                 dt_annotation.store_chunk(df, now=updated_at.timestamp())
 
     if max_updated_at is not None:
-        df_sync = pd.DataFrame(
-            {"project_id": [project_id], "last_updated_at": [max_updated_at]}
-        )
+        df_sync = pd.DataFrame({"project_id": [project_id], "last_updated_at": [max_updated_at]})
         dt_sync.store_chunk(df_sync, now=max_updated_at.timestamp())

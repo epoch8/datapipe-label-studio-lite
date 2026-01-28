@@ -3,13 +3,17 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from label_studio_sdk import LabelStudio
 from datapipe.compute import Catalog, Pipeline, Table, build_compute, run_steps
 from datapipe.datatable import DataStore
 from datapipe.step.batch_generate import BatchGenerate, do_batch_generate
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.store.database import TableStoreDB
+from label_studio_sdk import LabelStudio
+from pytest_cases import parametrize, parametrize_with_cases
+from sqlalchemy.sql.schema import Column
+from sqlalchemy.sql.sqltypes import JSON, String
+
 from datapipe_label_studio_lite.create_projects_step import CreateLabelStudioProjects
 from datapipe_label_studio_lite.sdk_utils import get_project_by_title
 from datapipe_label_studio_lite.upload_predictions_pipeline import (
@@ -18,7 +22,6 @@ from datapipe_label_studio_lite.upload_predictions_pipeline import (
 from datapipe_label_studio_lite.upload_tasks_pipeline import (
     LabelStudioUploadTasksToProjects,
 )
-from tests.util import get_project_id, get_project_tasks, wait_until_label_studio_is_up
 from tests.ls_test_helpers import (
     DELETE_UNANNOTATED_TASKS_ONLY_ON_UPDATE,
     INCLUDE_PARAMS,
@@ -29,9 +32,8 @@ from tests.ls_test_helpers import (
     convert_to_ls_input_data,
     wrapped_partial,
 )
-from pytest_cases import parametrize, parametrize_with_cases
-from sqlalchemy.sql.schema import Column
-from sqlalchemy.sql.sqltypes import JSON, String
+from tests.util import get_project_id, get_project_tasks, wait_until_label_studio_is_up
+
 
 def gen_ls_project_setting():
     yield pd.DataFrame(
@@ -175,9 +177,7 @@ class CasesLabelStudio:
         predictions_steps = (
             [
                 BatchTransform(
-                    func=wrapped_partial(
-                        add_predictions, base_columns=["project_identifier", "id"]
-                    ),
+                    func=wrapped_partial(add_predictions, base_columns=["project_identifier", "id"]),
                     inputs=["ls_input_data_raw"],
                     outputs=["ls_input_data__has__prediction"],
                 ),
@@ -537,10 +537,7 @@ def test_ls_when_some_data_is_deleted_many_projects(
     delete_unannotated_tasks_only_on_update: bool,
 ):
     # Skip this test when LS is 1.4.0 and include_preannotations=True, include_prepredictions=False
-    if (
-        include_preannotations
-        and not include_prepredictions
-    ):
+    if include_preannotations and not include_prepredictions:
         return
     # These steps should upload tasks
     data_df = pd.concat(list(gen_data_df()), ignore_index=True)

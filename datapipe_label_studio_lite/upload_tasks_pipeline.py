@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
-from label_studio_sdk import LabelStudio
 from datapipe.compute import (
     Catalog,
     ComputeStep,
@@ -28,6 +27,14 @@ from datapipe.types import (
     index_difference,
     index_to_data,
 )
+from label_studio_sdk import LabelStudio
+from label_studio_sdk.data_manager import Column as ColumnLS
+from label_studio_sdk.data_manager import Filters, Operator, Type
+from label_studio_sdk.types.import_api_request import (
+    ImportApiRequest as LSImportApiRequest,
+)
+from sqlalchemy import JSON, Column, DateTime, Integer
+
 from datapipe_label_studio_lite.sdk_utils import (
     get_project_by_title,
     get_tasks_iter,
@@ -37,13 +44,7 @@ from datapipe_label_studio_lite.sdk_utils import (
     storage_to_dict,
 )
 from datapipe_label_studio_lite.types import GCSBucket, ProjectDict, S3Bucket
-from label_studio_sdk.types.import_api_request import (
-    ImportApiRequest as LSImportApiRequest,
-)
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
-from label_studio_sdk.data_manager import Column as ColumnLS
-from label_studio_sdk.data_manager import Filters, Operator, Type
-from sqlalchemy import JSON, Column, DateTime, Integer
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
 
@@ -348,9 +349,7 @@ class LabelStudioUploadTasks(PipelineStep):
             return (self.ls_client, self._project_id)
         project: Optional[ProjectDict]
         if str(self.project_identifier).isnumeric():
-            project = project_to_dict(
-                self.ls_client.projects.get(id=int(self.project_identifier))
-            )
+            project = project_to_dict(self.ls_client.projects.get(id=int(self.project_identifier)))
         else:
             project = get_project_by_title(self.ls_client, str(self.project_identifier))
         if project is None:
@@ -529,10 +528,12 @@ def upload_tasks_to_label_studio_projects(
             logger.info(f"Project {project_identifier} not found in input__label_studio_project. Skipping")
             continue
         project_id = int(
-            df__label_studio_project[df__label_studio_project["project_identifier"] == project_identifier]
-            .iloc[0]["project_id"]
+            df__label_studio_project[df__label_studio_project["project_identifier"] == project_identifier].iloc[0][
+                "project_id"
+            ]
         )
         logger.info(f"Uploading tasks to {project_identifier=} ({project_id=})")
+
         def _get_project_context(project_id: int = project_id) -> Tuple[LabelStudio, int]:
             return (ls_client, project_id)
 
