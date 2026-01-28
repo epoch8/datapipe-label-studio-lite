@@ -317,7 +317,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
         pipeline = Pipeline(
             [
                 BatchTransform(
-                    labels=[("stage", "upload_predictions_to_ls"), *(self.labels or [])],
+                    labels=self.labels,
                     func=upload_prediction_to_label_studio_projects,
                     inputs=[
                         self.input__label_studio_project,

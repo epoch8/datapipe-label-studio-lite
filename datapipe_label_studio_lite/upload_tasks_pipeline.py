@@ -405,7 +405,7 @@ class LabelStudioUploadTasks(PipelineStep):
         pipeline = Pipeline(
             [
                 BatchTransform(
-                    labels=[("stage", "upload_data_to_ls"), *(self.labels or [])],
+                    labels=self.labels,
                     func=upload_tasks_to_label_studio,
                     inputs=[self.input__item],
                     outputs=[self.output__label_studio_project_task],
