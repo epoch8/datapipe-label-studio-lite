@@ -1,11 +1,11 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
-import label_studio_sdk
 import numpy as np
 import pandas as pd
+from label_studio_sdk import LabelStudio
 from datapipe.compute import (
     Catalog,
     ComputeStep,
@@ -28,10 +28,19 @@ from datapipe.types import (
     index_difference,
     index_to_data,
 )
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title, get_tasks_iter
-from datapipe_label_studio_lite.types import GCSBucket, S3Bucket
+from datapipe_label_studio_lite.sdk_utils import (
+    get_project_by_title,
+    get_tasks_iter,
+    import_tasks_response_to_dict,
+    login_and_get_token,
+    project_to_dict,
+    storage_to_dict,
+)
+from datapipe_label_studio_lite.types import GCSBucket, ProjectDict, S3Bucket
+from label_studio_sdk.types.import_api_request import (
+    ImportApiRequest as LSImportApiRequest,
+)
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
-from label_studio_sdk.data_manager import DATETIME_FORMAT
 from label_studio_sdk.data_manager import Column as ColumnLS
 from label_studio_sdk.data_manager import Filters, Operator, Type
 from sqlalchemy import JSON, Column, DateTime, Integer
@@ -45,36 +54,27 @@ def convert_data_if_need(value: Any):
     return value
 
 
-def delete_task_from_project(project: label_studio_sdk.Project, task_id: Any) -> None:
-    response = project.session.request(
-        method="DELETE",
-        url=project.get_url(f"api/tasks/{task_id}/"),
-        headers=project.headers,
-        cookies=project.cookies,
-    )
-    if response.status_code not in [
-        204,
-        404,
-        500,  # Hack for strange behavior in production
-        # [2023-02-05 20:15:39,105] [core.utils.common::custom_exception_handler::82] [ERROR] 5c208521-949c-4d43-ac1d-9a19cd3bfaaf Task matching query does not exist.
-        # Traceback (most recent call last):
-        #   File "/usr/local/lib/python3.8/dist-packages/rest_framework/views.py", line 506, in dispatch
-        #     response = handler(request, *args, **kwargs)
-        #   File "/usr/local/lib/python3.8/dist-packages/django/utils/decorators.py", line 43, in _wrapper
-        #     return bound_method(*args, **kwargs)
-        #   File "/label-studio/label_studio/webhooks/utils.py", line 155, in wrap
-        #     instance = self.get_object()
-        #   File "/usr/local/lib/python3.8/dist-packages/rest_framework/generics.py", line 83, in get_object
-        #     queryset = self.filter_queryset(self.get_queryset())
-        #   File "/label-studio/label_studio/tasks/api.py", line 196, in get_queryset
-        #     project = Task.objects.get(id=self.request.parser_context['kwargs'].get('pk')).project.id
-        #   File "/usr/local/lib/python3.8/dist-packages/django/db/models/manager.py", line 85, in manager_method
-        #     return getattr(self.get_queryset(), name)(*args, **kwargs)
-        #   File "/usr/local/lib/python3.8/dist-packages/django/db/models/query.py", line 429, in get
-        #     raise self.model.DoesNotExist(
-        # tasks.models.Task.DoesNotExist: Task matching query does not exist.
-    ]:
-        response.raise_for_status()
+def _to_utc_aware(value: Any) -> datetime:
+    ts = pd.Timestamp(value).to_pydatetime()
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def _to_utc_naive(value: Any) -> datetime:
+    ts = pd.Timestamp(value).to_pydatetime()
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc)
+    return ts.replace(tzinfo=None)
+
+
+def delete_task_from_project(client: LabelStudio, task_id: Any) -> None:
+    try:
+        client.tasks.delete(id=str(task_id))
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code not in [404, 500]:
+            raise
 
 
 # created_ago - очень плохой параметр, он меняется каждый раз, когда происходит запрос
@@ -88,7 +88,7 @@ def _cleanup(values):
 def upload_tasks_to_label_studio(
     df: pd.DataFrame,
     idx: IndexDF,
-    get_project: Callable[[], label_studio_sdk.Project],
+    get_project_context: Callable[[], Tuple[LabelStudio, int]],
     primary_keys: List[str],
     columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
@@ -101,7 +101,7 @@ def upload_tasks_to_label_studio(
     if df.empty and idx.empty:
         return pd.DataFrame(columns=primary_keys + ["task_id"])
 
-    project = get_project()
+    client, project_id = get_project_context()
     idx = data_to_index(idx, primary_keys)
     if delete_unannotated_tasks_only_on_update:
         df_idx = data_to_index(df, primary_keys)
@@ -118,7 +118,9 @@ def upload_tasks_to_label_studio(
                 for task_id in df_existing_tasks["task_id"]
             ],
         )
-        tasks = project.get_tasks(filters=filters)
+        tasks = []
+        for tasks_page in get_tasks_iter(client, project_id, filters=filters):
+            tasks.extend(tasks_page)
         df__output__label_studio_project_annotation = (
             pd.DataFrame.from_records(
                 {
@@ -180,7 +182,7 @@ def upload_tasks_to_label_studio(
 
     if len(df_existing_tasks_to_be_deleted) > 0:
         for task_id in df_existing_tasks_to_be_deleted["task_id"]:
-            delete_task_from_project(project, task_id)
+            delete_task_from_project(client, task_id)
         dt__output__label_studio_project_annotation.delete_by_idx(
             idx=data_to_index(
                 dt__output__label_studio_project_annotation.get_data(
@@ -194,19 +196,28 @@ def upload_tasks_to_label_studio(
         return pd.DataFrame(columns=primary_keys + ["task_id"])
 
     if len(df_to_be_uploaded) > 0:
-        data_to_be_added = [
-            {
-                "data": {
-                    **{
+        data_to_be_added: List[LSImportApiRequest] = [
+            cast(
+                LSImportApiRequest,
+                {
+                    "data": {
                         column: convert_data_if_need(df_to_be_uploaded.loc[idx, column])
                         for column in primary_keys + columns
                     }
-                }
-            }
+                },
+            )
             for idx in df_to_be_uploaded.index
         ]
-        tasks_added = project.import_tasks(tasks=data_to_be_added)
-        df_to_be_uploaded["task_id"] = tasks_added
+        import_response = client.projects.import_tasks(
+            id=project_id,
+            request=data_to_be_added,
+            return_task_ids=True,
+        )
+        response_data = import_tasks_response_to_dict(import_response)
+        task_ids = response_data.get("task_ids")
+        if not task_ids:
+            raise ValueError("Label Studio did not return task IDs for import_tasks.")
+        df_to_be_uploaded["task_id"] = task_ids
 
     if delete_unannotated_tasks_only_on_update:
         df_res = pd.concat(
@@ -231,27 +242,27 @@ def get_annotations_from_label_studio(
     дате последней синхронизации
     """
     kwargs = kwargs or {}
-    get_project: Callable[[], label_studio_sdk.Project] = kwargs["get_project"]
-    project = get_project()
+    get_project_context: Callable[[], Tuple[LabelStudio, int]] = kwargs["get_project_context"]
+    client, project_id = get_project_context()
     primary_keys: List[str] = kwargs["primary_keys"]
 
     (dt__output__label_studio_sync_table, dt__output__label_studio_project_annotation) = output_dts
     dt__output__label_studio_project_task: DataTable = kwargs["dt__output__label_studio_project_task"]
 
     df__output__label_studio_sync_table = dt__output__label_studio_sync_table.get_data(
-        idx=cast(IndexDF, pd.DataFrame({"project_id": [project.id]}))
+        idx=cast(IndexDF, pd.DataFrame({"project_id": [project_id]}))
     )
 
     if df__output__label_studio_sync_table.empty:
-        df__output__label_studio_sync_table.loc[0, "project_id"] = project.id
+        df__output__label_studio_sync_table.loc[0, "project_id"] = project_id
         df__output__label_studio_sync_table.loc[0, "last_updated_at"] = datetime.fromtimestamp(0, tz=timezone.utc)
 
-    last_sync = df__output__label_studio_sync_table.loc[0, "last_updated_at"]
+    last_sync = _to_utc_aware(df__output__label_studio_sync_table.loc[0, "last_updated_at"])
     filters = Filters.create(
         conjunction="and",
         items=[
             Filters.item(
-                name="tasks:updated_at",  # в sdk нету Column_LS.updated_at
+                name=ColumnLS.updated_at,
                 operator=Operator.GREATER,
                 column_type=Type.Datetime,
                 value=Filters.value(value=Filters.datetime(last_sync)),
@@ -259,8 +270,8 @@ def get_annotations_from_label_studio(
         ],
     )
     updated_ats = []
-    for tasks_page in get_tasks_iter(project, filters=filters):
-        updated_ats.extend([datetime.strptime(task["updated_at"], DATETIME_FORMAT) for task in tasks_page])
+    for tasks_page in get_tasks_iter(client, project_id, filters=filters):
+        updated_ats.extend([task["updated_at"] for task in tasks_page])
         output_df = pd.DataFrame.from_records(
             {
                 **{primary_key: [task["data"][primary_key] for task in tasks_page] for primary_key in primary_keys},
@@ -274,9 +285,8 @@ def get_annotations_from_label_studio(
         if len(df__output__label_studio_project_task) > 0:
             output_df = pd.merge(df__output__label_studio_project_task, output_df).drop(columns=["task_id"])
             dt__output__label_studio_project_annotation.store_chunk(output_df)
-
     if len(updated_ats) > 0:
-        df__output__label_studio_sync_table.loc[0, "last_updated_at"] = max(updated_ats)
+        df__output__label_studio_sync_table.loc[0, "last_updated_at"] = _to_utc_naive(max(updated_ats))
         dt__output__label_studio_sync_table.store_chunk(df__output__label_studio_sync_table)
 
 
@@ -309,87 +319,106 @@ class LabelStudioUploadTasks(PipelineStep):
             assert len(self.project_identifier) <= 50
 
         # lazy initialization
-        self._ls_client: Optional[label_studio_sdk.Client] = None
-        self._project: Optional[label_studio_sdk.Project] = None
+        self._ls_client: Optional[LabelStudio] = None
+        self._project_id: Optional[int] = None
 
         self.labels = self.labels or []
         self.storages = self.storages or []
 
     @property
-    def ls_client(self) -> label_studio_sdk.Client:
+    def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            self._ls_client = label_studio_sdk.Client(
-                url=self.ls_url,
-                api_key=self.api_key if isinstance(self.api_key, str) else None,
-                credentials=self.api_key if isinstance(self.api_key, tuple) else None,
+            api_key = (
+                self.api_key
+                if isinstance(self.api_key, str)
+                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
+            )
+            self._ls_client = LabelStudio(
+                base_url=self.ls_url,
+                api_key=api_key,
             )
         return self._ls_client
 
-    def get_project(self) -> label_studio_sdk.Project:
+    def get_project_context(self) -> Tuple[LabelStudio, int]:
         """
         При первом использовании ищет проект в LS по индентификатору,
         если его нет -- автоматически создаётся проект с нуля.
         """
-        if self._project is not None:
-            return self._project
-        assert self.ls_client.check_connection(), "No connection to LS."
-        self._project = (
-            self.ls_client.get_project(int(self.project_identifier))
-            if str(self.project_identifier).isnumeric()
-            else get_project_by_title(self.ls_client, str(self.project_identifier))
-        )
-        if self._project is None:
-            self._project = self.ls_client.start_project(
-                title=self.project_identifier,
-                description=self.project_description_at_create,
-                label_config=self.project_label_config_at_create,
-                expert_instruction="",
-                show_instruction=False,
-                show_skip_button=False,
-                enable_empty_annotation=True,
-                show_annotation_history=False,
-                organization=1,
-                color="#FFFFFF",
-                maximum_annotations=1,
-                is_published=False,
-                model_version="",
-                is_draft=False,
-                min_annotations_to_start_training=10,
-                show_collab_predictions=True,
-                sampling="Sequential sampling",
-                show_ground_truth_first=True,
-                show_overlap_first=True,
-                overlap_cohort_percentage=100,
-                task_data_login=None,
-                task_data_password=None,
-                control_weights={},
+        if self._project_id is not None:
+            return (self.ls_client, self._project_id)
+        project: Optional[ProjectDict]
+        if str(self.project_identifier).isnumeric():
+            project = project_to_dict(
+                self.ls_client.projects.get(id=int(self.project_identifier))
+            )
+        else:
+            project = get_project_by_title(self.ls_client, str(self.project_identifier))
+        if project is None:
+            project = project_to_dict(
+                self.ls_client.projects.create(
+                    title=str(self.project_identifier),
+                    description=self.project_description_at_create,
+                    label_config=self.project_label_config_at_create,
+                    expert_instruction="",
+                    show_instruction=False,
+                    show_skip_button=False,
+                    enable_empty_annotation=True,
+                    show_annotation_history=False,
+                    organization=1,
+                    color="#FFFFFF",
+                    maximum_annotations=1,
+                    is_published=False,
+                    model_version="",
+                    is_draft=False,
+                    min_annotations_to_start_training=10,
+                    show_collab_predictions=True,
+                    sampling="Sequential sampling",
+                    show_ground_truth_first=True,
+                    show_overlap_first=True,
+                    overlap_cohort_percentage=100,
+                    task_data_login=None,
+                    task_data_password=None,
+                    control_weights={},
+                )
             )
             logger.info(
-                f"Project with {self.project_identifier=} not found, created new project with id={self._project.id}"
+                "Project with %s not found, created new project with id=%s",
+                self.project_identifier,
+                project["id"],
             )
-        storages_response = self.ls_client.make_request("GET", "/api/storages", params=dict(project=self._project.id))
-        connected_buckets = [
-            f"{storage['type']}://{storage.get('bucket', None)}" for storage in storages_response.json()
-        ]
+        assert project is not None
+        self._project_id = project["id"]
+        connected_buckets = set()
+        for s3_storage in self.ls_client.import_storage.s3.list(project=self._project_id):
+            storage_bucket = storage_to_dict(s3_storage).get("bucket")
+            if storage_bucket:
+                connected_buckets.add(f"s3://{storage_bucket}")
+        for gcs_storage in self.ls_client.import_storage.gcs.list(project=self._project_id):
+            storage_bucket = storage_to_dict(gcs_storage).get("bucket")
+            if storage_bucket:
+                connected_buckets.add(f"gcs://{storage_bucket}")
         for storage in cast(List[Union[GCSBucket, S3Bucket]], self.storages):
             if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
+                result: object
                 if isinstance(storage, S3Bucket):
-                    result = self._project.connect_s3_import_storage(
+                    result = self.ls_client.import_storage.s3.create(
+                        project=self._project_id,
                         bucket=storage.bucket,
                         title=storage_name,
                         aws_access_key_id=storage.key,
                         aws_secret_access_key=storage.secret,
-                        s3_endpoint=storage.endpoint_url,
+                        s3endpoint=storage.endpoint_url,
                         region_name=storage.region_name,
                     )
                 elif isinstance(storage, GCSBucket):
-                    result = self._project.connect_google_import_storage(
+                    result = self.ls_client.import_storage.gcs.create(
+                        project=self._project_id,
                         bucket=storage.bucket,
                         title=storage_name,
                         google_application_credentials=storage.google_application_credentials,
                     )
                 logger.info(f"Adding storage {storage_name=} to project: {result}")
-        return self._project
+        return (self.ls_client, self._project_id)
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         dt__input_item = ds.get_table(self.input__item)
@@ -405,7 +434,6 @@ class LabelStudioUploadTasks(PipelineStep):
                 create_table=self.create_table,
             ),
         )
-        primary_keys = dt__input_item.table_store.primary_keys
         catalog.add_datatable(
             self.output__label_studio_project_task, Table(dt__output__label_studio_project_task.table_store)
         )
@@ -452,7 +480,7 @@ class LabelStudioUploadTasks(PipelineStep):
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
                     kwargs=dict(
-                        get_project=self.get_project,
+                        get_project_context=self.get_project_context,
                         primary_keys=self.primary_keys,
                         columns=self.columns,
                         delete_unannotated_tasks_only_on_update=self.delete_unannotated_tasks_only_on_update,
@@ -467,7 +495,7 @@ class LabelStudioUploadTasks(PipelineStep):
                     outputs=[self.output__label_studio_sync_table, self.output__label_studio_project_annotation],
                     check_for_changes=False,
                     kwargs=dict(
-                        get_project=self.get_project,
+                        get_project_context=self.get_project_context,
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_task=dt__output__label_studio_project_task,
                     ),
@@ -481,7 +509,7 @@ def upload_tasks_to_label_studio_projects(
     df__item: pd.DataFrame,
     df__label_studio_project: pd.DataFrame,
     idx: IndexDF,
-    ls_client: label_studio_sdk.Client,
+    ls_client: LabelStudio,
     primary_keys: List[str],
     columns: List[str],
     delete_unannotated_tasks_only_on_update: bool,
@@ -500,14 +528,18 @@ def upload_tasks_to_label_studio_projects(
         if project_identifier not in set(df__label_studio_project["project_identifier"]):
             logger.info(f"Project {project_identifier} not found in input__label_studio_project. Skipping")
             continue
-        project_id = df__label_studio_project[
-            df__label_studio_project["project_identifier"] == project_identifier
-        ].iloc[0]["project_id"]
+        project_id = int(
+            df__label_studio_project[df__label_studio_project["project_identifier"] == project_identifier]
+            .iloc[0]["project_id"]
+        )
         logger.info(f"Uploading tasks to {project_identifier=} ({project_id=})")
+        def _get_project_context(project_id: int = project_id) -> Tuple[LabelStudio, int]:
+            return (ls_client, project_id)
+
         df__res = upload_tasks_to_label_studio(
             df=df_by_project_identifier,
             idx=idx_by_project_identifier,
-            get_project=lambda: ls_client.get_project(project_id),
+            get_project_context=_get_project_context,
             primary_keys=primary_keys,
             columns=columns,
             delete_unannotated_tasks_only_on_update=delete_unannotated_tasks_only_on_update,
@@ -530,15 +562,16 @@ def get_annotations_from_label_studio_projects(
     kwargs: Optional[Dict[str, Any]] = None,
 ) -> None:
     kwargs = kwargs or {}
-    ls_client: label_studio_sdk.Client = kwargs["ls_client"]
+    ls_client: LabelStudio = kwargs["ls_client"]
     dt__label_studio_project: DataTable = input_dts[0]
     df__label_studio_project = dt__label_studio_project.get_data()
     for project_identifier, project_id in zip(
         df__label_studio_project["project_identifier"], df__label_studio_project["project_id"]
     ):
+        project_id = int(project_id)
         logger.info(f"Getting annotations from {project_identifier=} ({project_id=})")
         params_kwargs = kwargs.copy()
-        params_kwargs["get_project"] = lambda: ls_client.get_project(project_id)
+        params_kwargs["get_project_context"] = lambda project_id=project_id: (ls_client, project_id)
         get_annotations_from_label_studio(
             ds, input_dts=[], output_dts=output_dts, run_config=run_config, kwargs=params_kwargs
         )
@@ -568,18 +601,21 @@ class LabelStudioUploadTasksToProjects(PipelineStep):
             assert column not in self.primary_keys, f'The column "{column}" is reserved for this PipelineStep.'
 
         # lazy initialization
-        self._ls_client: Optional[label_studio_sdk.Client] = None
-        self._project: Optional[label_studio_sdk.Project] = None
+        self._ls_client: Optional[LabelStudio] = None
 
         self.labels = self.labels or []
 
     @property
-    def ls_client(self) -> label_studio_sdk.Client:
+    def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            self._ls_client = label_studio_sdk.Client(
-                url=self.ls_url,
-                api_key=self.api_key if isinstance(self.api_key, str) else None,
-                credentials=self.api_key if isinstance(self.api_key, tuple) else None,
+            api_key = (
+                self.api_key
+                if isinstance(self.api_key, str)
+                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
+            )
+            self._ls_client = LabelStudio(
+                base_url=self.ls_url,
+                api_key=api_key,
             )
         return self._ls_client
 

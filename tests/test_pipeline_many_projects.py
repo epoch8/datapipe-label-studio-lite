@@ -1,12 +1,9 @@
 import string
-import time
-from functools import partial, update_wrapper
 from typing import List
 
-import label_studio_sdk
 import numpy as np
 import pandas as pd
-import pytest
+from label_studio_sdk import LabelStudio
 from datapipe.compute import Catalog, Pipeline, Table, build_compute, run_steps
 from datapipe.datatable import DataStore
 from datapipe.step.batch_generate import BatchGenerate, do_batch_generate
@@ -14,41 +11,27 @@ from datapipe.step.batch_transform import BatchTransform
 from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.store.database import TableStoreDB
 from datapipe_label_studio_lite.create_projects_step import CreateLabelStudioProjects
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title, is_service_up
+from datapipe_label_studio_lite.sdk_utils import get_project_by_title
 from datapipe_label_studio_lite.upload_predictions_pipeline import (
     LabelStudioUploadPredictionsToProjects,
 )
 from datapipe_label_studio_lite.upload_tasks_pipeline import (
     LabelStudioUploadTasksToProjects,
 )
-from pkg_resources import parse_version
+from tests.util import get_project_id, get_project_tasks, wait_until_label_studio_is_up
+from tests.ls_test_helpers import (
+    DELETE_UNANNOTATED_TASKS_ONLY_ON_UPDATE,
+    INCLUDE_PARAMS,
+    INCLUDE_PREDICTIONS,
+    PROJECT_LABEL_CONFIG_TEST,
+    TASKS_COUNT,
+    add_predictions,
+    convert_to_ls_input_data,
+    wrapped_partial,
+)
 from pytest_cases import parametrize, parametrize_with_cases
 from sqlalchemy.sql.schema import Column
 from sqlalchemy.sql.sqltypes import JSON, String
-
-PROJECT_LABEL_CONFIG_TEST = """<View>
-  <Text name="text" value="$text"/>
-  <Choices name="label" toName="text" choice="single" showInLine="true">
-    <Choice value="Class1"/>
-    <Choice value="Class2"/>
-    <Choice value="Class1_annotation"/>
-    <Choice value="Class2_annotation"/>
-  </Choices>
-</View>"""
-
-
-def wait_until_label_studio_is_up(ls: label_studio_sdk.Client):
-    raise_exception = False
-    counter = 0
-    while not is_service_up(ls, raise_exception=raise_exception):
-        time.sleep(1.0)
-        counter += 1
-        if counter >= 60:
-            raise_exception = True
-
-
-TASKS_COUNT = 10
-
 
 def gen_ls_project_setting():
     yield pd.DataFrame(
@@ -63,109 +46,18 @@ def gen_ls_project_setting():
 def gen_data_df():
     yield pd.DataFrame(
         {
-            "project_identifier": [f"project_identifier0" for i in range(TASKS_COUNT)],
+            "project_identifier": ["project_identifier0" for i in range(TASKS_COUNT)],
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
             "text": [np.random.choice([x for x in string.ascii_letters]) for i in range(TASKS_COUNT)],
         }
     )
     yield pd.DataFrame(
         {
-            "project_identifier": [f"project_identifier1" for i in range(TASKS_COUNT)],
+            "project_identifier": ["project_identifier1" for i in range(TASKS_COUNT)],
             "id": [f"task_{i}" for i in range(TASKS_COUNT)],
             "text": [np.random.choice([x for x in string.ascii_letters]) for i in range(TASKS_COUNT)],
         }
     )
-
-
-def wrapped_partial(func, *args, **kwargs):
-    partial_func = partial(func, *args, **kwargs)
-    update_wrapper(partial_func, func)
-    return partial_func
-
-
-def convert_to_ls_input_data(data_df, include_preannotations: bool, include_prepredictions: bool):
-    columns = ["project_identifier", "id", "text"]
-
-    for column, bool_ in [
-        ("preannotations", include_preannotations),
-        ("prepredictions", include_prepredictions),
-    ]:
-        if bool_:
-            data_df[column] = [
-                [
-                    {
-                        "result": [
-                            {
-                                "value": {"choices": [np.random.choice(["Class1", "Class2"])]},
-                                "from_name": "label",
-                                "to_name": "text",
-                                "type": "choices",
-                            }
-                        ]
-                    }
-                ]
-                for _ in range(len(data_df))
-            ]
-            columns.append(column)
-
-    return data_df[columns]
-
-
-def add_predictions(data_df):
-    data_df["prediction"] = [
-        {
-            "result": [
-                {
-                    "value": {"choices": [np.random.choice(["Class1", "Class2"])]},
-                    "from_name": "label",
-                    "to_name": "text",
-                    "type": "choices",
-                }
-            ]
-        }
-        for _ in range(len(data_df))
-    ]
-    return data_df[["project_identifier", "id", "prediction"]]
-
-
-INCLUDE_PARAMS = [
-    pytest.param({"include_preannotations": False, "include_prepredictions": False}, id=""),
-    # pytest.param(
-    #     {
-    #         'include_preannotations': True,
-    #         'include_prepredictions': False
-    #     },
-    #     id='Preann'
-    # ),
-    # pytest.param(
-    #     {
-    #         'include_preannotations': False,
-    #         'include_prepredictions': True
-    #     },
-    #     id='Prepred'
-    # ),
-    # pytest.param(
-    #     {
-    #         'include_preannotations': True,
-    #         'include_prepredictions': True
-    #     },
-    #     id='PreannPrepred'
-    # ),
-]
-
-INCLUDE_PREDICTIONS = [
-    pytest.param(False, id="NoPredsStep"),
-    pytest.param(True, id="WithPredStep"),
-]
-
-DELETE_UNANNOTATED_TASKS_ONLY_ON_UPDATE = [
-    pytest.param(False, id="DelAllOnUpdate"),
-    pytest.param(True, id="DelUnAnnOnUpdate"),
-    # pytest.param(
-    #     True,
-    #     id='WithPredStep'
-    # ),
-]
 
 
 class CasesLabelStudio:
@@ -184,10 +76,6 @@ class CasesLabelStudio:
         request,
         delete_unannotated_tasks_only_on_update,
     ):
-        if hasattr(request.config, "workerinput"):
-            workerid = request.config.workerinput["workerid"]
-        else:
-            workerid = "master"
         ls_url, api_key = ls_url_and_api_key
         include_preannotations, include_prepredictions = (
             include_params["include_preannotations"],
@@ -258,6 +146,7 @@ class CasesLabelStudio:
                     convert_to_ls_input_data,
                     include_preannotations=include_preannotations,
                     include_prepredictions=include_prepredictions,
+                    base_columns=["project_identifier", "id", "text"],
                 ),
                 inputs=["ls_input_data_raw"],
                 outputs=["ls_input_data"],
@@ -286,7 +175,9 @@ class CasesLabelStudio:
         predictions_steps = (
             [
                 BatchTransform(
-                    func=add_predictions,
+                    func=wrapped_partial(
+                        add_predictions, base_columns=["project_identifier", "id"]
+                    ),
                     inputs=["ls_input_data_raw"],
                     outputs=["ls_input_data__has__prediction"],
                 ),
@@ -307,12 +198,12 @@ class CasesLabelStudio:
         pipeline = Pipeline(main_steps + predictions_steps)
 
         steps = build_compute(ds, catalog, pipeline)
-        label_studio_session = label_studio_sdk.Client(url=ls_url, api_key=api_key)
+        label_studio_session = LabelStudio(base_url=ls_url, api_key=api_key)
         wait_until_label_studio_is_up(label_studio_session)
         for project_title in ["project_identifier0", "project_identifier1"]:
             project = get_project_by_title(label_studio_session, project_title)
             if project is not None:
-                project.delete_project(project.id)
+                label_studio_session.projects.delete(id=get_project_id(project))
 
         yield (
             ds,
@@ -328,7 +219,7 @@ class CasesLabelStudio:
         for project_title in ["project_identifier0", "project_identifier1"]:
             project = get_project_by_title(label_studio_session, project_title)
             if project is not None:
-                project.delete_project(project.id)
+                label_studio_session.projects.delete(id=get_project_id(project))
 
 
 def ls_moderation_base_many_projects(
@@ -338,7 +229,7 @@ def ls_moderation_base_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     # This should be ok (project will be created, but without data)
@@ -373,13 +264,14 @@ def ls_moderation_base_many_projects(
         project = get_project_by_title(label_studio_session, project_identifier)
         assert project is not None
 
-        tasks_res = project.get_tasks()
+        project_id = get_project_id(project)
+        tasks_res = get_project_tasks(label_studio_session, project_id)
         assert len(tasks_res) == TASKS_COUNT
 
         run_steps(ds, steps)
 
         # Check that after second run no tasks are leaking
-        tasks_res = project.get_tasks()
+        tasks_res = get_project_tasks(label_studio_session, project_id)
         assert len(tasks_res) == TASKS_COUNT
 
         tasks = np.array(tasks_res)
@@ -399,10 +291,11 @@ def ls_moderation_base_many_projects(
                 for task in tasks[idxs]
             ]
             for task, annotation in zip(tasks[idxs], annotations):
-                label_studio_session.make_request(
-                    "POST",
-                    f"api/tasks/{task['id']}/annotations/",
-                    json=dict(result=annotation["result"], was_cancelled=False, task_id=task["id"]),
+                label_studio_session.annotations.create(
+                    id=task["id"],
+                    result=annotation["result"],
+                    was_cancelled=False,
+                    task=task["id"],
                 )
             run_steps(ds, steps)
             idxs_df = pd.DataFrame.from_records({"id": [task["data"]["id"] for task in tasks[idxs]]})
@@ -439,7 +332,7 @@ def test_ls_moderation_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     ls_moderation_base_many_projects(
@@ -466,7 +359,7 @@ def test_ls_when_data_is_changed_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     df1 = pd.DataFrame(
@@ -519,8 +412,9 @@ def test_ls_when_data_is_changed_many_projects(
         idx_project = pd.DataFrame([{"project_identifier": project_identifier}])
         project = get_project_by_title(label_studio_session, project_identifier)
         assert project is not None
+        project_id = get_project_id(project)
 
-        tasks = project.get_tasks()
+        tasks = get_project_tasks(label_studio_session, project_id)
         assert len(tasks) == TASKS_COUNT
 
         assert len(ds.get_table("ls_task").get_data(idx_project)) == TASKS_COUNT
@@ -552,7 +446,7 @@ def test_ls_when_task_is_missing_from_ls_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     df1 = pd.DataFrame(
@@ -605,8 +499,9 @@ def test_ls_when_task_is_missing_from_ls_many_projects(
         idx_project = pd.DataFrame([{"project_identifier": project_identifier}])
         project = get_project_by_title(label_studio_session, project_identifier)
         assert project is not None
+        project_id = get_project_id(project)
 
-        tasks = project.get_tasks()
+        tasks = get_project_tasks(label_studio_session, project_id)
         assert len(tasks) == TASKS_COUNT
 
         assert len(ds.get_table("ls_task").get_data(idx_project)) == TASKS_COUNT
@@ -638,14 +533,13 @@ def test_ls_when_some_data_is_deleted_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     # Skip this test when LS is 1.4.0 and include_preannotations=True, include_prepredictions=False
     if (
         include_preannotations
         and not include_prepredictions
-        and (parse_version(label_studio_session.version) == parse_version("1.4.0"))
     ):
         return
     # These steps should upload tasks
@@ -678,8 +572,9 @@ def test_ls_when_some_data_is_deleted_many_projects(
         idx_project = pd.DataFrame([{"project_identifier": project_identifier}])
         project = get_project_by_title(label_studio_session, project_identifier)
         assert project is not None
+        project_id = get_project_id(project)
 
-        tasks = project.get_tasks()
+        tasks = get_project_tasks(label_studio_session, project_id)
         assert len(tasks) == TASKS_COUNT - 5
 
         df_ls_task = ds.get_table("ls_task").get_data(idx_project)
@@ -713,7 +608,7 @@ def test_ls_moderate_then_delete_task_many_projects(
     include_preannotations: bool,
     include_prepredictions: bool,
     include_predictions: bool,
-    label_studio_session: label_studio_sdk.Client,
+    label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
     ls_moderation_base_many_projects(
@@ -732,7 +627,8 @@ def test_ls_moderate_then_delete_task_many_projects(
     for project_identifier in ["project_identifier0", "project_identifier1"]:
         idx_project = pd.DataFrame([{"project_identifier": project_identifier}])
         project = get_project_by_title(label_studio_session, project_identifier)
-        tasks_after = project.get_tasks()
+        project_id = get_project_id(project)
+        tasks_after = get_project_tasks(label_studio_session, project_id)
         if delete_unannotated_tasks_only_on_update:
             assert len(ds.get_table("ls_output").get_data(idx_project)) == 10
             assert len(tasks_after) == 10

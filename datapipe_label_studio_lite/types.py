@@ -1,8 +1,25 @@
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, TypedDict, Union
 
 logger = logging.getLogger("dataipipe_label_studio_lite")
+
+
+class ProjectDict(TypedDict):
+    id: int
+    title: str
+
+
+class StorageDict(TypedDict, total=False):
+    bucket: str
+
+
+class ImportApiRequest(TypedDict):
+    data: Dict[str, object]
+
+
+class ImportTasksResponseDict(TypedDict, total=False):
+    task_ids: List[int]
 
 
 @dataclass

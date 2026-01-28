@@ -48,14 +48,13 @@ jobs:
         test-db-env: ["postgres"]
         test-ls-env:
           [
-            "heartexlabs/label-studio:1.10.1",
-            "heartexlabs/label-studio:1.8.0",
+            "heartexlabs/label-studio:1.22.0",
           ]
 
     services:
       postgres:
         # Docker Hub image
-        image: postgres:11.5
+        image: postgres:14
         # Provide the password for postgres
         env:
           POSTGRES_PASSWORD: password
@@ -102,3 +101,4 @@ jobs:
         env:
           LABEL_STUDIO_HOST: localhost
           LABEL_STUDIO_PORT: 8080
+          LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN: "true"

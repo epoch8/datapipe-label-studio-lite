@@ -10,13 +10,13 @@ authors = [
 exclude = ["tests", "experiments"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.13"
+python = ">=3.10, <3.13"
 pandas = ">=1.2.0"
 numpy = ">=1.21.0"
 SQLAlchemy = ">=1.4.25"
 requests = ">=2.24.0"
-datapipe-core = { version = ">=0.14.0-alpha.1, <0.15", allow-prereleases = true }
-label-studio-sdk = "^0.0.34"
+datapipe-core = { path = "../datapipe", develop = true }
+label-studio-sdk = ">=2.0.0, <3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 flake8 = "*"

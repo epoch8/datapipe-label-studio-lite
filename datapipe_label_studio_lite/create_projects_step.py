@@ -2,8 +2,8 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
-import label_studio_sdk
 import pandas as pd
+from label_studio_sdk import LabelStudio
 from datapipe.compute import (
     Catalog,
     ComputeStep,
@@ -17,7 +17,13 @@ from datapipe.executor import ExecutorConfig
 from datapipe.step.batch_transform import BatchTransform
 from datapipe.store.database import TableStoreDB
 from datapipe.types import Labels
-from datapipe_label_studio_lite.sdk_utils import get_project_by_title
+from datapipe_label_studio_lite.sdk_utils import (
+    get_project_by_title,
+    login_and_get_token,
+    project_to_dict,
+    storage_to_dict,
+)
+from datapipe_label_studio_lite.types import ProjectDict
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 from sqlalchemy import Column, Integer
 
@@ -67,17 +73,21 @@ class CreateLabelStudioProjects(PipelineStep):
 
     def __post_init__(self):
         # lazy initialization
-        self._ls_client: Optional[label_studio_sdk.Client] = None
+        self._ls_client: Optional[LabelStudio] = None
         self.labels = self.labels or []
         self.storages = self.storages or []
 
     @property
-    def ls_client(self) -> label_studio_sdk.Client:
+    def ls_client(self) -> LabelStudio:
         if self._ls_client is None:
-            self._ls_client = label_studio_sdk.Client(
-                url=self.ls_url,
-                api_key=self.api_key if isinstance(self.api_key, str) else None,
-                credentials=self.api_key if isinstance(self.api_key, tuple) else None,
+            api_key = (
+                self.api_key
+                if isinstance(self.api_key, str)
+                else login_and_get_token(self.ls_url, self.api_key[0], self.api_key[1])
+            )
+            self._ls_client = LabelStudio(
+                base_url=self.ls_url,
+                api_key=api_key,
             )
         return self._ls_client
 
@@ -86,63 +96,78 @@ class CreateLabelStudioProjects(PipelineStep):
         project_identifier: Union[str, int],  # project_title or id
         project_label_config_at_create: str,
         project_description_at_create: str,
-    ) -> label_studio_sdk.Project:
+    ) -> ProjectDict:
         """
         При первом использовании ищет проект в LS по индентификатору,
         если его нет -- автоматически создаётся проект с нуля.
         """
         if isinstance(project_identifier, str):
             assert len(project_identifier) <= 50
-        assert self.ls_client.check_connection(), "No connection to LS."
-        project = (
-            self.ls_client.get_project(int(project_identifier))
-            if str(project_identifier).isnumeric()
-            else get_project_by_title(self.ls_client, str(project_identifier))
-        )
+        project: Optional[ProjectDict]
+        if str(project_identifier).isnumeric():
+            project = project_to_dict(self.ls_client.projects.get(id=int(project_identifier)))
+        else:
+            project = get_project_by_title(self.ls_client, str(project_identifier))
         if project is None:
-            project = self.ls_client.start_project(
-                title=project_identifier,
-                description=project_description_at_create,
-                label_config=project_label_config_at_create,
-                expert_instruction="",
-                show_instruction=False,
-                show_skip_button=False,
-                enable_empty_annotation=True,
-                show_annotation_history=False,
-                organization=1,
-                color="#FFFFFF",
-                maximum_annotations=1,
-                is_published=False,
-                model_version="",
-                is_draft=False,
-                min_annotations_to_start_training=10,
-                show_collab_predictions=True,
-                sampling="Sequential sampling",
-                show_ground_truth_first=True,
-                show_overlap_first=True,
-                overlap_cohort_percentage=100,
-                task_data_login=None,
-                task_data_password=None,
-                control_weights={},
+            project = project_to_dict(
+                self.ls_client.projects.create(
+                    title=str(project_identifier),
+                    description=project_description_at_create,
+                    label_config=project_label_config_at_create,
+                    expert_instruction="",
+                    show_instruction=False,
+                    show_skip_button=False,
+                    enable_empty_annotation=True,
+                    show_annotation_history=False,
+                    organization=1,
+                    color="#FFFFFF",
+                    maximum_annotations=1,
+                    is_published=False,
+                    model_version="",
+                    is_draft=False,
+                    min_annotations_to_start_training=10,
+                    show_collab_predictions=True,
+                    sampling="Sequential sampling",
+                    show_ground_truth_first=True,
+                    show_overlap_first=True,
+                    overlap_cohort_percentage=100,
+                    task_data_login=None,
+                    task_data_password=None,
+                    control_weights={},
+                )
             )
-            logger.info(f"Project with {project_identifier=} not found, created new project with id={project.id}")
-        storages_response = self.ls_client.make_request("GET", "/api/storages", params=dict(project=project.id))
-        connected_buckets = [
-            f"{storage['type']}://{storage.get('bucket', None)}" for storage in storages_response.json()
-        ]
+            logger.info(
+                "Project with %s not found, created new project with id=%s",
+                project_identifier,
+                project["id"],
+            )
+        assert project is not None
+        project_id = project["id"]
+        connected_buckets = set()
+        for s3_storage in self.ls_client.import_storage.s3.list(project=project_id):
+            storage_bucket = storage_to_dict(s3_storage).get("bucket")
+            if storage_bucket:
+                connected_buckets.add(f"s3://{storage_bucket}")
+        for gcs_storage in self.ls_client.import_storage.gcs.list(project=project_id):
+            storage_bucket = storage_to_dict(gcs_storage).get("bucket")
+            if storage_bucket:
+                connected_buckets.add(f"gcs://{storage_bucket}")
         for storage in cast(List[Union[GCSBucket, S3Bucket]], self.storages):
             if (storage_name := f"{storage.type}://{storage.bucket}") not in connected_buckets:
+                result: object
                 if isinstance(storage, S3Bucket):
-                    result = project.connect_s3_import_storage(
+                    result = self.ls_client.import_storage.s3.create(
+                        project=project_id,
                         bucket=storage.bucket,
                         title=storage_name,
                         aws_access_key_id=storage.key,
                         aws_secret_access_key=storage.secret,
-                        s3_endpoint=storage.endpoint_url,
+                        s3endpoint=storage.endpoint_url,
                         region_name=storage.region_name,
                     )
                 elif isinstance(storage, GCSBucket):
-                    result = project.connect_google_import_storage(
+                    result = self.ls_client.import_storage.gcs.create(
+                        project=project_id,
                         bucket=storage.bucket,
                         title=storage_name,
                         google_application_credentials=storage.google_application_credentials,
@@ -194,7 +219,7 @@ class CreateLabelStudioProjects(PipelineStep):
             project = self.create_project(
                 project_identifier, project_label_config_at_create, project_description_at_create
             )
-            df__input__label_studio_project_setting["project_id"] = project.id
+            df__input__label_studio_project_setting["project_id"] = project["id"]
             return df__input__label_studio_project_setting[["project_identifier", "project_id"]]
 
         pipeline = Pipeline(
