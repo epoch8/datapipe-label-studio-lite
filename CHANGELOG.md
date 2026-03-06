@@ -4,7 +4,7 @@
 * Major refactoring:
 - `LabelStudioStep` -> `LabelStudioUploadTasks`
 - Added `LabelStudioUploadPredictions`
-- Для помощи с миграцией обращаться к @bobokvsky
+- For questions with migration ask @bobokvsky
 * Added Storages support (S3 or GCS) for `LabelStudioUploadTasks`
 
 # 0.3.5
