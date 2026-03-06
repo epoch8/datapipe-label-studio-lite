@@ -84,6 +84,16 @@ jobs:
             --env POSTGRE_HOST=host.docker.internal \
             --env LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN=true \
             ${{ matrix.test-ls-env }}
+      - name: Wait for Label Studio startup
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS "http://localhost:8080/user/login/" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Label Studio didn't become ready in time"
+          exit 1
 
       - uses: actions/checkout@v2
 

@@ -1,8 +1,10 @@
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
+import requests
 from datapipe.store.database import DBConn
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -54,14 +56,37 @@ def dbconn():
 
 @pytest.fixture(scope="session")
 def ls_url() -> str:
-    ls_host = os.environ.get("`LABEL`_STUDIO_HOST", "localhost")
+    ls_host = os.environ.get("LABEL_STUDIO_HOST", "localhost")
     ls_port = os.environ.get("LABEL_STUDIO_PORT", "8080")
     return f"http://{ls_host}:{ls_port}"
 
 
+def _get_ls_api_key_with_retries(
+    ls_url: str,
+    email: str,
+    password: str,
+    attempts: int = 60,
+    sleep_seconds: float = 1.0,
+) -> str:
+    last_error = None
+    for _ in range(attempts):
+        try:
+            api_key = sign_up(ls_url, email, password)
+            if api_key is None:
+                api_key = login_and_get_token(ls_url, email, password)
+            return api_key
+        except (requests.exceptions.RequestException, ValueError, KeyError) as exc:
+            last_error = exc
+            time.sleep(sleep_seconds)
+
+    if last_error is not None:
+        raise RuntimeError(
+            f"Could not obtain Label Studio API token from {ls_url} after {attempts} attempts"
+        ) from last_error
+    raise RuntimeError(f"Could not obtain Label Studio API token from {ls_url}")
+
+
 @pytest.fixture(scope="session")
 def ls_url_and_api_key(ls_url):
-    api_key = sign_up(ls_url, "test@epoch8.com", "qwerty123")
-    if api_key is None:
-        api_key = login_and_get_token(ls_url, "test@epoch8.com", "qwerty123")
+    api_key = _get_ls_api_key_with_retries(ls_url, "test@epoch8.com", "qwerty123")
     yield ls_url, api_key
