@@ -81,7 +81,9 @@ jobs:
             --env POSTGRE_USER=postgres \
             --env POSTGRE_PASSWORD=password \
             --env POSTGRE_PORT=5432 \
-            --env POSTGRE_HOST=host.docker.internal ${{ matrix.test-ls-env }}
+            --env POSTGRE_HOST=host.docker.internal \
+            --env LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN=true \
+            ${{ matrix.test-ls-env }}
 
       - uses: actions/checkout@v2
 
@@ -101,4 +103,3 @@ jobs:
         env:
           LABEL_STUDIO_HOST: localhost
           LABEL_STUDIO_PORT: 8080
-          LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN: "true"
