@@ -15,7 +15,7 @@ pandas = ">=1.2.0"
 numpy = ">=1.21.0"
 SQLAlchemy = ">=1.4.25"
 requests = ">=2.24.0"
-datapipe-core = { path = "../datapipe", develop = true }
+datapipe-core = { version = ">=0.14.8, <0.15", allow-prereleases = true, extras = ["sqlite"] }
 label-studio-sdk = ">=2.0.0, <3.0.0"
 
 [tool.poetry.group.dev.dependencies]
