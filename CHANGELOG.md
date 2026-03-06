@@ -1,5 +1,6 @@
 # 0.4.0
 * Added Python3.11 support, datapipe-core dependency 0.14.8+
+* Label Studio 1.22.0+ support
 * Major refactoring:
 - `LabelStudioStep` -> `LabelStudioUploadTasks`
 - Added `LabelStudioUploadPredictions`
