@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import json
 import logging
 import os
@@ -14,10 +13,6 @@ from typing import (
     Union,
     cast,
 )
-=======
-import requests
-import label_studio_sdk._legacy as label_studio_sdk
->>>>>>> master
 from urllib.parse import urljoin
 
 import requests
@@ -72,7 +67,6 @@ def login_and_get_token(ls_url: str, email: str, password: str) -> str:
         raise ValueError("Login failed.")
 
 
-<<<<<<< HEAD
 def _object_to_dict(obj: object) -> Dict[str, object]:
     if isinstance(obj, dict):
         return cast(Dict[str, object], obj)
@@ -121,14 +115,6 @@ def get_project_by_title(ls: LabelStudio, title: str) -> Optional[ProjectDict]:
         if titles.count(title) > 1:
             raise ValueError(f'There are 2 or more projects with title="{title}"')
         return candidates[titles.index(title)]
-=======
-def get_project_by_title(ls: label_studio_sdk.Client, title: str) -> Optional[label_studio_sdk.Project]:
-    projects: List[label_studio_sdk.Project] = ls.get_projects()
-    titles = [project.get_params()["title"] for project in projects]
-    if title in titles:
-        assert titles.count(title) == 1, f'There are 2 or more projects with title="{title}"'
-        return projects[titles.index(title)]
->>>>>>> master
     return None
 
 
@@ -347,7 +333,6 @@ def get_tasks_iter(
 
     """
 
-<<<<<<< HEAD
     query: Dict[str, Any] = {}
     if filters is not None:
         query["filters"] = filters
@@ -368,24 +353,3 @@ def get_tasks_iter(
         fields="task_only" if only_ids else "all",
     ):
         yield [_task_to_dict(task) for task in page_items]
-=======
-    page = 1
-    while True:
-        try:
-            data = project.get_paginated_tasks(
-                filters=filters,
-                ordering=ordering,
-                view_id=view_id,
-                selected_ids=selected_ids,
-                only_ids=only_ids,
-                page=page,
-                page_size=100,
-            )
-            yield data["tasks"]
-            page += 1
-            if data.get("end_pagination", False):
-                break
-        # we'll get 404 from API on empty page
-        except label_studio_sdk.project.LabelStudioException:
-            break
->>>>>>> master
