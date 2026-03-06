@@ -1,10 +1,32 @@
 # 0.4.0
-* Added Python3.11 support
+* Added Python3.11 support, datapipe-core dependency 0.14.8+
 * Major refactoring:
 - `LabelStudioStep` -> `LabelStudioUploadTasks`
 - Added `LabelStudioUploadPredictions`
 - Для помощи с миграцией обращаться к @bobokvsky
 * Added Storages support (S3 or GCS) for `LabelStudioUploadTasks`
+
+# 0.3.5
+
+* Update datapipe-core dependency 0.14+
+
+# 0.3.4
+
+* Update label_studio_sdk dependency (allow >2 pydantic)
+
+# 0.3.3
+
+* Update python dependency (allow 3.11 python)
+
+# 0.3.2
+
+* Update Pandas dependency (allow 2+ version)
+
+# 0.3.1
+
+* Add drop_duplicates on fetch data from LabelStudio (get_annotations_from_ls)
+
+# 0.3.0
 
 # 0.3.0
 * Update datapipe-core version (0.13.0-alpha.4)
