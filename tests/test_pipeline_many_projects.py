@@ -536,7 +536,6 @@ def test_ls_when_some_data_is_deleted_many_projects(
     label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
-    # Skip this test when LS is 1.4.0 and include_preannotations=True, include_prepredictions=False
     if include_preannotations and not include_prepredictions:
         return
     # These steps should upload tasks

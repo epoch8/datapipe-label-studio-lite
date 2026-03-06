@@ -11,7 +11,6 @@ from datapipe.step.datatable_transform import DatatableTransformStep
 from datapipe.store.database import TableStoreDB
 from datapipe.types import data_to_index
 from label_studio_sdk import LabelStudio
-from pkg_resources import parse_version
 from pytest_cases import parametrize, parametrize_with_cases
 from sqlalchemy.sql.schema import Column
 from sqlalchemy.sql.sqltypes import JSON, String
@@ -473,13 +472,6 @@ def test_ls_when_some_data_is_deleted(
     label_studio_session: LabelStudio,
     delete_unannotated_tasks_only_on_update: bool,
 ):
-    # Skip this test when LS is 1.4.0 and include_preannotations=True, include_prepredictions=False
-    if (
-        include_preannotations
-        and not include_prepredictions
-        and (parse_version(getattr(label_studio_session, "version", "0")) == parse_version("1.4.0"))
-    ):
-        return
     # These steps should upload tasks
     data_df = next(gen_data_df())
     data_df2 = data_df.set_index("id").drop(index=[f"task_{i}" for i in [0, 3, 5, 7, 9]]).reset_index()
