@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v2
@@ -21,25 +21,22 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-
-      - name: Setup poetry
-        run: |
-          pip install poetry==1.5.0
   
       - name: Install dependencies
         run: |
-          poetry install --with dev
+          pip install . "flake8" "mypy"
+          pip install pandas-stubs pytest-cases types-setuptools types-redis types-tqdm types-pillow types-PyYAML types-requests
 
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
-          poetry run flake8 datapipe_label_studio_lite --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 datapipe_label_studio_lite --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          poetry run flake8 datapipe_label_studio_lite --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 datapipe_label_studio_lite --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Lint with mypy
         run: |
-          poetry run mypy -p datapipe_label_studio_lite --ignore-missing-imports --follow-imports=silent --check-untyped-defs
+          mypy -p datapipe_label_studio_lite --ignore-missing-imports --follow-imports=silent --check-untyped-defs
 
   test:
     # needs: lint
@@ -47,18 +44,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
         test-db-env: ["postgres"]
         test-ls-env:
           [
-            "heartexlabs/label-studio:1.8.0",
-            "heartexlabs/label-studio:1.5.0.post0",
+            "heartexlabs/label-studio:1.22.0",
           ]
 
     services:
       postgres:
         # Docker Hub image
-        image: postgres:11.5
+        image: postgres:14
         # Provide the password for postgres
         env:
           POSTGRES_PASSWORD: password
@@ -85,7 +81,19 @@ jobs:
             --env POSTGRE_USER=postgres \
             --env POSTGRE_PASSWORD=password \
             --env POSTGRE_PORT=5432 \
-            --env POSTGRE_HOST=host.docker.internal ${{ matrix.test-ls-env }}
+            --env POSTGRE_HOST=host.docker.internal \
+            --env LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN=true \
+            ${{ matrix.test-ls-env }}
+      - name: Wait for Label Studio startup
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS "http://localhost:8080/user/login/" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Label Studio didn't become ready in time"
+          exit 1
 
       - uses: actions/checkout@v2
 
@@ -95,17 +103,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Setup poetry
-        run: |
-          pip install poetry==1.5.0
-
       - name: Install dependencies
         run: |
-          poetry install --with dev
+          pip install . "pysqlite3-binary" "sqlalchemy-pysqlite3-binary" "pytest<8" "pytest_cases" "python-dotenv"
 
       - name: Test with pytest
         run: |
-          poetry run pytest -vv -x
+          pytest -vv -x
         env:
           LABEL_STUDIO_HOST: localhost
           LABEL_STUDIO_PORT: 8080

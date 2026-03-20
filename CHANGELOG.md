@@ -1,3 +1,12 @@
+# 0.4.0
+* Added Python3.11 support, datapipe-core dependency 0.14.8+
+* Label Studio 1.22.0+ support
+* Major refactoring:
+- `LabelStudioStep` -> `LabelStudioUploadTasks`
+- Added `LabelStudioUploadPredictions`
+- For questions with migration ask @bobokvsky
+* Added Storages support (S3 or GCS) for `LabelStudioUploadTasks`
+
 # 0.3.5
 
 * Update datapipe-core dependency 0.14+
@@ -20,14 +29,13 @@
 
 # 0.3.0
 
+# 0.3.0
 * Update datapipe-core version (0.13.0-alpha.4)
-* `LabelStudioStep` now supports deleting tasks in `upload` table. In `output`
-  table older annotations are not deleted.
+* `LabelStudioStep` now supports deleting tasks in `upload` table. In `output` table older annotations are not deleted.
 * Added argument `delete_unannotated_tasks_only_on_update` in `LabelStudioStep`.
 * Removed some dependencies
 
 # 0.2.2
-
 * Update datapipe-core version (0.12.0)
 
 # 0.2.1
