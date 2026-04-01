@@ -88,4 +88,5 @@ def convert_to_ls_input_data(data_df, include_preannotations: bool, include_prep
 
 def add_predictions(data_df, base_columns):
     data_df["prediction"] = [_make_result_item() for _ in range(len(data_df))]
-    return data_df[base_columns + ["prediction"]]
+    data_df["model_version"] = "v1"
+    return data_df[base_columns + ["model_version", "prediction"]]

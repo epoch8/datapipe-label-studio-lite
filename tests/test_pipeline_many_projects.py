@@ -132,6 +132,7 @@ class CasesLabelStudio:
                             Column("project_identifier", String(), primary_key=True),
                             Column("id", String(), primary_key=True),
                             Column("prediction", JSON),
+                            Column("model_version", String()),
                         ],
                         create_table=True,
                     )
@@ -189,6 +190,7 @@ class CasesLabelStudio:
                     ls_url=ls_url,
                     api_key=api_key,
                     primary_keys=["project_identifier", "id"],
+                    model_version__column="model_version",
                     create_table=True,
                 ),
             ]

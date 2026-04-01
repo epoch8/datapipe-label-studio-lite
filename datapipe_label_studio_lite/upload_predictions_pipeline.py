@@ -39,7 +39,7 @@ def upload_prediction_to_label_studio(
     get_project_context: Callable[[], Tuple[LabelStudio, int]],
     primary_keys: List[str],
     dt__output__label_studio_project_prediction: DataTable,
-    model_version__separator: str,
+    model_version__column: str,
 ) -> pd.DataFrame:
     """
     Добавляет в LS предсказания.
@@ -66,10 +66,7 @@ def upload_prediction_to_label_studio(
     if df.empty:
         return pd.DataFrame(columns=primary_keys + ["task_id"])
 
-    df["model_version"] = df.apply(
-        lambda row: model_version__separator.join([str(row[column]) for column in primary_keys]),
-        axis=1,
-    )
+    df["model_version"] = df[model_version__column]
     # Не подходит из-за https://github.com/HumanSignal/label-studio/issues/4819
     # uploaded_predictions = self.project.create_predictions(
     #     [
@@ -120,7 +117,7 @@ class LabelStudioUploadPredictions(PipelineStep):
     chunk_size: int = 100
     create_table: bool = False
     labels: Optional[Labels] = None
-    model_version__separator: str = "__"
+    model_version__column: str = "model_version"
     executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
@@ -151,7 +148,9 @@ class LabelStudioUploadPredictions(PipelineStep):
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
-        check_columns_are_in_table(ds, self.input__item__has__prediction, self.primary_keys + ["prediction"])
+        check_columns_are_in_table(
+            ds, self.input__item__has__prediction, self.primary_keys + ["prediction", self.model_version__column]
+        )
         check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
         catalog.add_datatable(
             self.output__label_studio_project_prediction,
@@ -192,7 +191,7 @@ class LabelStudioUploadPredictions(PipelineStep):
                         get_project_context=self.get_project_context,
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
-                        model_version__separator=self.model_version__separator,
+                        model_version__column=self.model_version__column,
                     ),
                 ),
             ]
@@ -208,7 +207,7 @@ def upload_prediction_to_label_studio_projects(
     ls_client: LabelStudio,
     primary_keys: List[str],
     dt__output__label_studio_project_prediction: DataTable,
-    model_version__separator: str,
+    model_version__column: str,
 ) -> pd.DataFrame:
     project_identifiers = (
         set(df__label_studio_project["project_identifier"])
@@ -242,7 +241,7 @@ def upload_prediction_to_label_studio_projects(
             get_project_context=_get_project_context,
             primary_keys=primary_keys,
             dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
-            model_version__separator=model_version__separator,
+            model_version__column=model_version__column,
         )
         dfs.append(df__res)
     if len(dfs) == 0:
@@ -267,7 +266,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
     chunk_size: int = 100
     create_table: bool = False
     labels: Optional[Labels] = None
-    model_version__separator: str = "__"
+    model_version__column: str = "model_version"
     executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
@@ -285,7 +284,9 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
         assert "project_identifier" in self.primary_keys
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
-        check_columns_are_in_table(ds, self.input__item__has__prediction, self.primary_keys + ["prediction"])
+        check_columns_are_in_table(
+            ds, self.input__item__has__prediction, self.primary_keys + ["prediction", self.model_version__column]
+        )
         check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
         check_columns_are_in_table(ds, self.input__label_studio_project, ["project_identifier", "project_id"])
         catalog.add_datatable(
@@ -331,7 +332,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         ls_client=self.ls_client,
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
-                        model_version__separator=self.model_version__separator,
+                        model_version__column=self.model_version__column,
                     ),
                     transform_keys=self.primary_keys,
                 ),

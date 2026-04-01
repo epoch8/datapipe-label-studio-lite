@@ -99,6 +99,7 @@ class CasesLabelStudio:
                         name="ls_input_data__has__prediction",
                         data_sql_schema=[
                             Column("id", String(), primary_key=True),
+                            Column("model_version", String()),
                             Column("prediction", JSON),
                         ],
                         create_table=True,
@@ -147,6 +148,7 @@ class CasesLabelStudio:
                     api_key=api_key,
                     project_identifier=project_title,
                     primary_keys=["id"],
+                    model_version__column="model_version",
                     create_table=True,
                 ),
             ]
