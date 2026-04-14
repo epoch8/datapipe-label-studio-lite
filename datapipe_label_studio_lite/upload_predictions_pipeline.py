@@ -121,6 +121,7 @@ def upload_prediction_to_label_studio(
         else:
             kwargs = {
                 "task": row["task_id"],
+                "id": row["task_id"],
                 "result": payload.get("result", []),
                 "was_cancelled": False,
             }
