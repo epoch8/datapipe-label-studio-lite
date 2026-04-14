@@ -143,7 +143,7 @@ class CasesLabelStudio:
                 LabelStudioUploadPredictions(
                     input__item__has__prediction="ls_input_data__has__prediction",
                     input__label_studio_project_task="ls_task",
-                    output__label_studio_project_prediction="ls_prediction",
+                    output__label_studio_project_result="ls_prediction",
                     ls_url=ls_url,
                     api_key=api_key,
                     project_identifier=project_title,

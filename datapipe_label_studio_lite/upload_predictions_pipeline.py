@@ -27,9 +27,32 @@ from datapipe_label_studio_lite.sdk_utils import (
 from datapipe_label_studio_lite.upload_tasks_pipeline import logger
 from datapipe_label_studio_lite.utils import check_columns_are_in_table
 
+_VALID_UPLOAD_MODES = {"prediction", "annotation"}
+
 
 def _make_jsonable(value: object) -> object:
     return json.loads(json.dumps(value, default=str))
+
+
+def _normalize_optional_value(value: object) -> Optional[object]:
+    if pd.isna(value):
+        return None
+    return value
+
+
+def _get_upload_columns(
+    upload_mode: str,
+    model_version__column: str,
+    annotation_completed_by__column: str,
+) -> Tuple[str, str, str, str]:
+    if upload_mode not in _VALID_UPLOAD_MODES:
+        raise ValueError(
+            f"Unsupported upload_mode='{upload_mode}'. "
+            f"Expected one of {sorted(_VALID_UPLOAD_MODES)}."
+        )
+    if upload_mode == "prediction":
+        return ("prediction", "prediction_id", "model_version", model_version__column)
+    return ("annotation", "annotation_id", "completed_by", annotation_completed_by__column)
 
 
 def upload_prediction_to_label_studio(
@@ -38,76 +61,89 @@ def upload_prediction_to_label_studio(
     idx: IndexDF,
     get_project_context: Callable[[], Tuple[LabelStudio, int]],
     primary_keys: List[str],
-    dt__output__label_studio_project_prediction: DataTable,
+    dt__output__label_studio_project_result: DataTable,
     model_version__column: str,
+    annotation_completed_by__column: str,
+    upload_mode: str = "prediction",
 ) -> pd.DataFrame:
     """
-    Добавляет в LS предсказания.
+    Добавляет в LS предсказания или аннотации.
     """
+    (
+        item_column,
+        item_id_column,
+        item_meta_column,
+        item_meta_input_column,
+    ) = _get_upload_columns(upload_mode, model_version__column, annotation_completed_by__column)
+
     df = pd.merge(df__item__has__prediction, df__label_studio_project_task, on=primary_keys)
     if (df__item__has__prediction.empty and df__label_studio_project_task.empty) and idx.empty:
-        return pd.DataFrame(columns=primary_keys + ["task_id", "prediction"])
+        return pd.DataFrame(columns=primary_keys + ["task_id", item_column])
 
     client, project_id = get_project_context()
     idx = data_to_index(idx, primary_keys)
-    df_existing_prediction_to_be_deleted = dt__output__label_studio_project_prediction.get_data(idx=idx)
-    if len(df_existing_prediction_to_be_deleted) > 0:
-        for prediction in df_existing_prediction_to_be_deleted["prediction"]:
+    df_existing_item_to_be_deleted = dt__output__label_studio_project_result.get_data(idx=idx)
+    if len(df_existing_item_to_be_deleted) > 0:
+        for item in df_existing_item_to_be_deleted[item_column]:
+            item_id = item.get("id") if isinstance(item, dict) else None
+            if item_id is None:
+                continue
             try:
-                client.predictions.delete(id=prediction["id"])
+                if upload_mode == "prediction":
+                    client.predictions.delete(id=item_id)
+                else:
+                    client.annotations.delete(id=item_id)
             except Exception as exc:
                 status_code = getattr(exc, "status_code", None)
                 if status_code not in [404, 500]:
                     raise
-        dt__output__label_studio_project_prediction.delete_by_idx(
-            idx=data_to_index(df_existing_prediction_to_be_deleted, primary_keys)
+        dt__output__label_studio_project_result.delete_by_idx(
+            idx=data_to_index(df_existing_item_to_be_deleted, primary_keys)
         )
 
     if df.empty:
         return pd.DataFrame(columns=primary_keys + ["task_id"])
 
-    df["model_version"] = df[model_version__column]
-    # Не подходит из-за https://github.com/HumanSignal/label-studio/issues/4819
-    # uploaded_predictions = self.project.create_predictions(
-    #     [
-    #         dict(
-    #             task=row["task_id"],
-    #             result=row["prediction"].get('result', []),
-    #             model_version=row['model_version'],
-    #             score=row["prediction"].get('score', 1.0)
-    #         )
-    #         for _, row in df.iterrows()
-    #     ]
-    # )
-    uploaded_predictions = []
+    df[item_meta_column] = df[item_meta_input_column]
+    uploaded_items = []
     for _, row in df.iterrows():
-        prediction = client.predictions.create(
-            task=row["task_id"],
-            result=row["prediction"].get("result", []),
-            model_version=row["model_version"],
-            score=row["prediction"].get("score", 1.0),
-        )
-        uploaded_predictions.append(prediction)
-    df["prediction_id"] = [getattr(prediction, "id", None) for prediction in uploaded_predictions]
-    df["prediction"] = pd.Series(
-        [
-            _make_jsonable(
-                prediction.model_dump() if hasattr(prediction, "model_dump") else prediction
+        payload = row[item_column]
+        if not isinstance(payload, dict):
+            payload = {}
+
+        if upload_mode == "prediction":
+            item = client.predictions.create(
+                task=row["task_id"],
+                result=payload.get("result", []),
+                model_version=row[item_meta_column],
+                score=payload.get("score", 1.0),
             )
-            for prediction in uploaded_predictions
-        ],
+        else:
+            kwargs = {
+                "task": row["task_id"],
+                "result": payload.get("result", []),
+                "was_cancelled": False,
+            }
+            completed_by = _normalize_optional_value(row[item_meta_column])
+            if completed_by is not None:
+                kwargs["completed_by"] = completed_by
+            item = client.annotations.create(**kwargs)
+        uploaded_items.append(item)
+    df[item_id_column] = [getattr(item, "id", None) for item in uploaded_items]
+    df[item_column] = pd.Series(
+        [_make_jsonable(item.model_dump() if hasattr(item, "model_dump") else item) for item in uploaded_items],
         dtype=object,
         index=df.index,
     )
-    return df[primary_keys + ["task_id", "prediction_id", "model_version", "prediction"]]
+    return df[primary_keys + ["task_id", item_id_column, item_meta_column, item_column]]
 
 
 @dataclass
 class LabelStudioUploadPredictions(PipelineStep):
     input__item__has__prediction: str
-    # prediction имеет такой вид: {"result": [...], "score": 0.}
+    # prediction/annotation имеет такой вид: {"result": [...], "score": 0.}
     input__label_studio_project_task: str
-    output__label_studio_project_prediction: str
+    output__label_studio_project_result: str
 
     ls_url: str
     api_key: str
@@ -118,6 +154,8 @@ class LabelStudioUploadPredictions(PipelineStep):
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__column: str = "model_version"
+    annotation_completed_by__column: str = "annotation_completed_by"
+    upload_mode: str = "prediction"
     executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
@@ -128,6 +166,11 @@ class LabelStudioUploadPredictions(PipelineStep):
         self._ls_client: Optional[LabelStudio] = None
         self._project_id: Optional[int] = None
         self.labels = self.labels or []
+        _get_upload_columns(
+            self.upload_mode,
+            self.model_version__column,
+            self.annotation_completed_by__column,
+        )
 
     @property
     def ls_client(self) -> LabelStudio:
@@ -146,20 +189,32 @@ class LabelStudioUploadPredictions(PipelineStep):
         return (self.ls_client, self._project_id)
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
+        (
+            item_column,
+            item_id_column,
+            item_meta_column,
+            item_meta_input_column,
+        ) = _get_upload_columns(
+            self.upload_mode,
+            self.model_version__column,
+            self.annotation_completed_by__column,
+        )
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
         check_columns_are_in_table(
-            ds, self.input__item__has__prediction, self.primary_keys + ["prediction", self.model_version__column]
+            ds,
+            self.input__item__has__prediction,
+            self.primary_keys + [item_column, item_meta_input_column],
         )
         check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
         catalog.add_datatable(
-            self.output__label_studio_project_prediction,
+            self.output__label_studio_project_result,
             Table(
                 ds.get_or_create_table(
-                    self.output__label_studio_project_prediction,
+                    self.output__label_studio_project_result,
                     TableStoreDB(
                         dbconn=ds.meta_dbconn,
-                        name=self.output__label_studio_project_prediction,
+                        name=self.output__label_studio_project_result,
                         data_sql_schema=[
                             column
                             for column in dt__input__has__prediction.primary_schema
@@ -167,16 +222,16 @@ class LabelStudioUploadPredictions(PipelineStep):
                         ]
                         + [
                             Column("task_id", Integer),
-                            Column("prediction_id", Integer),
-                            Column("model_version", String),
-                            Column("prediction", JSON),
+                            Column(item_id_column, Integer),
+                            Column(item_meta_column, String),
+                            Column(item_column, JSON),
                         ],
                         create_table=self.create_table,
                     ),
                 ).table_store
             ),
         )
-        dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)
+        dt__output__label_studio_project_result = ds.get_table(self.output__label_studio_project_result)
 
         pipeline = Pipeline(
             [
@@ -184,14 +239,16 @@ class LabelStudioUploadPredictions(PipelineStep):
                     labels=self.labels,
                     func=upload_prediction_to_label_studio,
                     inputs=[self.input__item__has__prediction, self.input__label_studio_project_task],
-                    outputs=[self.output__label_studio_project_prediction],
+                    outputs=[self.output__label_studio_project_result],
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
                     kwargs=dict(
                         get_project_context=self.get_project_context,
                         primary_keys=self.primary_keys,
-                        dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+                        dt__output__label_studio_project_result=dt__output__label_studio_project_result,
                         model_version__column=self.model_version__column,
+                        annotation_completed_by__column=self.annotation_completed_by__column,
+                        upload_mode=self.upload_mode,
                     ),
                 ),
             ]
@@ -206,9 +263,18 @@ def upload_prediction_to_label_studio_projects(
     idx: IndexDF,
     ls_client: LabelStudio,
     primary_keys: List[str],
-    dt__output__label_studio_project_prediction: DataTable,
+    dt__output__label_studio_project_result: DataTable,
     model_version__column: str,
+    annotation_completed_by__column: str,
+    upload_mode: str = "prediction",
 ) -> pd.DataFrame:
+    (
+        item_column,
+        item_id_column,
+        item_meta_column,
+        _,
+    ) = _get_upload_columns(upload_mode, model_version__column, annotation_completed_by__column)
+
     project_identifiers = (
         set(df__label_studio_project["project_identifier"])
         .union(set(df__item__has__prediction["project_identifier"]))
@@ -240,12 +306,16 @@ def upload_prediction_to_label_studio_projects(
             idx=idx_by_project_identifier,
             get_project_context=_get_project_context,
             primary_keys=primary_keys,
-            dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+            dt__output__label_studio_project_result=dt__output__label_studio_project_result,
             model_version__column=model_version__column,
+            annotation_completed_by__column=annotation_completed_by__column,
+            upload_mode=upload_mode,
         )
         dfs.append(df__res)
     if len(dfs) == 0:
-        dfs_res = pd.DataFrame(columns=primary_keys + ["task_id", "prediction_id", "model_version", "prediction"])
+        dfs_res = pd.DataFrame(
+            columns=primary_keys + ["task_id", item_id_column, item_meta_column, item_column]
+        )
     else:
         dfs_res = pd.concat(dfs, ignore_index=True)
     return dfs_res
@@ -254,10 +324,10 @@ def upload_prediction_to_label_studio_projects(
 @dataclass
 class LabelStudioUploadPredictionsToProjects(PipelineStep):
     input__item__has__prediction: str
-    # prediction имеет такой вид: {"result": [...], "score": 0.}
+    # prediction/annotation имеет такой вид: {"result": [...], "score": 0.}
     input__label_studio_project: str
     input__label_studio_project_task: str
-    output__label_studio_project_prediction: str
+    output__label_studio_project_result: str
 
     ls_url: str
     api_key: str
@@ -267,12 +337,19 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__column: str = "model_version"
+    annotation_completed_by__column: str = "annotation_completed_by"
+    upload_mode: str = "prediction"
     executor_config: Optional[ExecutorConfig] = None
 
     def __post_init__(self):
         # lazy initialization
         self._ls_client: Optional[LabelStudio] = None
         self.labels = self.labels or []
+        _get_upload_columns(
+            self.upload_mode,
+            self.model_version__column,
+            self.annotation_completed_by__column,
+        )
 
     @property
     def ls_client(self) -> LabelStudio:
@@ -282,21 +359,33 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
 
     def build_compute(self, ds: DataStore, catalog: Catalog) -> List[ComputeStep]:
         assert "project_identifier" in self.primary_keys
+        (
+            item_column,
+            item_id_column,
+            item_meta_column,
+            item_meta_input_column,
+        ) = _get_upload_columns(
+            self.upload_mode,
+            self.model_version__column,
+            self.annotation_completed_by__column,
+        )
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
         check_columns_are_in_table(
-            ds, self.input__item__has__prediction, self.primary_keys + ["prediction", self.model_version__column]
+            ds,
+            self.input__item__has__prediction,
+            self.primary_keys + [item_column, item_meta_input_column],
         )
         check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
         check_columns_are_in_table(ds, self.input__label_studio_project, ["project_identifier", "project_id"])
         catalog.add_datatable(
-            self.output__label_studio_project_prediction,
+            self.output__label_studio_project_result,
             Table(
                 ds.get_or_create_table(
-                    self.output__label_studio_project_prediction,
+                    self.output__label_studio_project_result,
                     TableStoreDB(
                         dbconn=ds.meta_dbconn,
-                        name=self.output__label_studio_project_prediction,
+                        name=self.output__label_studio_project_result,
                         data_sql_schema=[
                             column
                             for column in dt__input__has__prediction.primary_schema
@@ -304,16 +393,16 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         ]
                         + [
                             Column("task_id", Integer),
-                            Column("prediction_id", Integer),
-                            Column("model_version", String),
-                            Column("prediction", JSON),
+                            Column(item_id_column, Integer),
+                            Column(item_meta_column, String),
+                            Column(item_column, JSON),
                         ],
                         create_table=self.create_table,
                     ),
                 ).table_store
             ),
         )
-        dt__output__label_studio_project_prediction = ds.get_table(self.output__label_studio_project_prediction)
+        dt__output__label_studio_project_result = ds.get_table(self.output__label_studio_project_result)
 
         pipeline = Pipeline(
             [
@@ -325,14 +414,16 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         self.input__item__has__prediction,
                         self.input__label_studio_project_task,
                     ],
-                    outputs=[self.output__label_studio_project_prediction],
+                    outputs=[self.output__label_studio_project_result],
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
                     kwargs=dict(
                         ls_client=self.ls_client,
                         primary_keys=self.primary_keys,
-                        dt__output__label_studio_project_prediction=dt__output__label_studio_project_prediction,
+                        dt__output__label_studio_project_result=dt__output__label_studio_project_result,
                         model_version__column=self.model_version__column,
+                        annotation_completed_by__column=self.annotation_completed_by__column,
+                        upload_mode=self.upload_mode,
                     ),
                     transform_keys=self.primary_keys,
                 ),
