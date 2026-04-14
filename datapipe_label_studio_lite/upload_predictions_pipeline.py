@@ -43,7 +43,7 @@ def _normalize_optional_value(value: object) -> Optional[object]:
 def _get_upload_columns(
     upload_mode: str,
     model_version__column: str,
-    annotation_completed_by__column: str,
+    annotations_completed_by__column: str,
 ) -> Tuple[str, str, str, str]:
     if upload_mode not in _VALID_UPLOAD_MODES:
         raise ValueError(
@@ -52,7 +52,7 @@ def _get_upload_columns(
         )
     if upload_mode == "prediction":
         return ("prediction", "prediction_id", "model_version", model_version__column)
-    return ("annotation", "annotation_id", "completed_by", annotation_completed_by__column)
+    return ("annotation", "annotation_id", "completed_by", annotations_completed_by__column)
 
 
 def upload_prediction_to_label_studio(
@@ -63,7 +63,7 @@ def upload_prediction_to_label_studio(
     primary_keys: List[str],
     dt__output__label_studio_project_result: DataTable,
     model_version__column: str,
-    annotation_completed_by__column: str,
+    annotations_completed_by__column: str,
     upload_mode: str = "prediction",
 ) -> pd.DataFrame:
     """
@@ -74,7 +74,7 @@ def upload_prediction_to_label_studio(
         item_id_column,
         item_meta_column,
         item_meta_input_column,
-    ) = _get_upload_columns(upload_mode, model_version__column, annotation_completed_by__column)
+    ) = _get_upload_columns(upload_mode, model_version__column, annotations_completed_by__column)
 
     df = pd.merge(df__item__has__prediction, df__label_studio_project_task, on=primary_keys)
     if (df__item__has__prediction.empty and df__label_studio_project_task.empty) and idx.empty:
@@ -154,7 +154,7 @@ class LabelStudioUploadPredictions(PipelineStep):
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__column: str = "model_version"
-    annotation_completed_by__column: str = "annotation_completed_by"
+    annotations_completed_by__column: str = "annotations_completed_by"
     upload_mode: str = "prediction"
     executor_config: Optional[ExecutorConfig] = None
 
@@ -169,7 +169,7 @@ class LabelStudioUploadPredictions(PipelineStep):
         _get_upload_columns(
             self.upload_mode,
             self.model_version__column,
-            self.annotation_completed_by__column,
+            self.annotations_completed_by__column,
         )
 
     @property
@@ -197,7 +197,7 @@ class LabelStudioUploadPredictions(PipelineStep):
         ) = _get_upload_columns(
             self.upload_mode,
             self.model_version__column,
-            self.annotation_completed_by__column,
+            self.annotations_completed_by__column,
         )
         dt__input__has__prediction = ds.get_table(self.input__item__has__result)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
@@ -247,7 +247,7 @@ class LabelStudioUploadPredictions(PipelineStep):
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_result=dt__output__label_studio_project_result,
                         model_version__column=self.model_version__column,
-                        annotation_completed_by__column=self.annotation_completed_by__column,
+                        annotations_completed_by__column=self.annotations_completed_by__column,
                         upload_mode=self.upload_mode,
                     ),
                 ),
@@ -265,7 +265,7 @@ def upload_prediction_to_label_studio_projects(
     primary_keys: List[str],
     dt__output__label_studio_project_result: DataTable,
     model_version__column: str,
-    annotation_completed_by__column: str,
+    annotations_completed_by__column: str,
     upload_mode: str = "prediction",
 ) -> pd.DataFrame:
     (
@@ -273,7 +273,7 @@ def upload_prediction_to_label_studio_projects(
         item_id_column,
         item_meta_column,
         _,
-    ) = _get_upload_columns(upload_mode, model_version__column, annotation_completed_by__column)
+    ) = _get_upload_columns(upload_mode, model_version__column, annotations_completed_by__column)
 
     project_identifiers = (
         set(df__label_studio_project["project_identifier"])
@@ -308,7 +308,7 @@ def upload_prediction_to_label_studio_projects(
             primary_keys=primary_keys,
             dt__output__label_studio_project_result=dt__output__label_studio_project_result,
             model_version__column=model_version__column,
-            annotation_completed_by__column=annotation_completed_by__column,
+            annotations_completed_by__column=annotations_completed_by__column,
             upload_mode=upload_mode,
         )
         dfs.append(df__res)
@@ -337,7 +337,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
     create_table: bool = False
     labels: Optional[Labels] = None
     model_version__column: str = "model_version"
-    annotation_completed_by__column: str = "annotation_completed_by"
+    annotations_completed_by__column: str = "annotations_completed_by"
     upload_mode: str = "prediction"
     executor_config: Optional[ExecutorConfig] = None
 
@@ -348,7 +348,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
         _get_upload_columns(
             self.upload_mode,
             self.model_version__column,
-            self.annotation_completed_by__column,
+            self.annotations_completed_by__column,
         )
 
     @property
@@ -367,7 +367,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
         ) = _get_upload_columns(
             self.upload_mode,
             self.model_version__column,
-            self.annotation_completed_by__column,
+            self.annotations_completed_by__column,
         )
         dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
@@ -422,7 +422,7 @@ class LabelStudioUploadPredictionsToProjects(PipelineStep):
                         primary_keys=self.primary_keys,
                         dt__output__label_studio_project_result=dt__output__label_studio_project_result,
                         model_version__column=self.model_version__column,
-                        annotation_completed_by__column=self.annotation_completed_by__column,
+                        annotations_completed_by__column=self.annotations_completed_by__column,
                         upload_mode=self.upload_mode,
                     ),
                     transform_keys=self.primary_keys,
