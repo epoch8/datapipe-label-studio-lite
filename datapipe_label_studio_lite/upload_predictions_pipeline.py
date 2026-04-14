@@ -140,7 +140,7 @@ def upload_prediction_to_label_studio(
 
 @dataclass
 class LabelStudioUploadPredictions(PipelineStep):
-    input__item__has__prediction: str
+    input__item__has__result: str
     # prediction/annotation имеет такой вид: {"result": [...], "score": 0.}
     input__label_studio_project_task: str
     output__label_studio_project_result: str
@@ -199,11 +199,11 @@ class LabelStudioUploadPredictions(PipelineStep):
             self.model_version__column,
             self.annotation_completed_by__column,
         )
-        dt__input__has__prediction = ds.get_table(self.input__item__has__prediction)
+        dt__input__has__prediction = ds.get_table(self.input__item__has__result)
         assert isinstance(dt__input__has__prediction.table_store, TableStoreDB)
         check_columns_are_in_table(
             ds,
-            self.input__item__has__prediction,
+            self.input__item__has__result,
             self.primary_keys + [item_column, item_meta_input_column],
         )
         check_columns_are_in_table(ds, self.input__label_studio_project_task, self.primary_keys + ["task_id"])
@@ -238,7 +238,7 @@ class LabelStudioUploadPredictions(PipelineStep):
                 BatchTransform(
                     labels=self.labels,
                     func=upload_prediction_to_label_studio,
-                    inputs=[self.input__item__has__prediction, self.input__label_studio_project_task],
+                    inputs=[self.input__item__has__result, self.input__label_studio_project_task],
                     outputs=[self.output__label_studio_project_result],
                     chunk_size=self.chunk_size,
                     executor_config=self.executor_config,
